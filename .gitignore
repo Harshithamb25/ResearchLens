@@ -1,0 +1,25 @@
+# These are local/generated/secret files. Do not upload them to GitHub
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+.env.*
+
+# ChromaDB
+chroma_db/
+
+# Generated data
+data/processed/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,8 +1,8 @@
-import fitz
+import pymupdf
 # PyMuPDF lets ResearchLens extract text from research PDFs while preserving page-level information, which we'll later use for citations. 
 
 def extract_text_from_pdf(pdf_path):
-    document = fitz.open(pdf_path)
+    document = pymupdf.open(pdf_path)
 
     pages = []
 
