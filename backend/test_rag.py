@@ -1,71 +1,61 @@
 from retrieval.retriever import search
-from retrieval.reranker import rerank
 from generation.llm_service import generate_answer
 
 
-question = "What datasets are discussed in the research paper?"
+query = "What datasets are discussed in the research paper?"
 
 
-# Stage 1: Semantic retrieval
-results = search(
-    question,
-    top_k=10
-)
-
+# Step 1: Retrieve relevant evidence
+results = search(query, top_k=2)
 documents = results["documents"][0]
 metadatas = results["metadatas"][0]
 
 
-# Build structured evidence
-evidence = []
+# Step 2: Build evidence context
+context_parts = []
 
-for document, metadata in zip(documents, metadatas):
-    evidence.append({
-        "document": metadata["document"],
-        "page": metadata["page"],
-        "chunk_id": metadata["chunk_id"],
-        "text": document
-    })
+for i in range(len(documents)):
+    document = metadatas[i]["document"]
+    page = metadatas[i]["page"]
+    text = documents[i]
 
-
-# Stage 2: Cross-encoder reranking
-ranked_evidence = rerank(
-    question,
-    evidence,
-    top_k=5
-)
+    context_parts.append(
+        f"[Source {i + 1} | {document} | Page {page}]\n{text}"
+    )
 
 
-# Stage 3: Grounded generation
-answer = generate_answer(
-    question,
-    ranked_evidence
-)
+context = "\n\n".join(context_parts)
 
 
-print("\n==============================")
-print("RESEARCHLENS RAG")
-print("==============================")
+# Step 3: Give only retrieved evidence to Gemini
+prompt = f"""
+You are ResearchLens, an evidence-grounded research assistant.
 
-print("\nQuestion:")
-print(question)
+Answer the user's question using ONLY the evidence provided below.
+
+If the evidence does not contain enough information to answer,
+say:
+
+"Insufficient evidence in the retrieved documents."
+
+Do not invent facts.
+
+For every important claim, mention the relevant paper and page.
+
+User question:
+{query}
+
+Retrieved evidence:
+{context}
+"""
 
 
-print("\nReranked Evidence:")
-
-for i, item in enumerate(ranked_evidence):
-
-    print("\n-----------------------------")
-    print("Rank:", i + 1)
-    print("Document:", item["document"])
-    print("Page:", item["page"])
-    print("Chunk:", item["chunk_id"])
-    print("Reranker Score:", item["reranker_score"])
-    print("Text:", item["text"][:300])
+# Step 4: Generate grounded answer
+answer = generate_answer(prompt)
 
 
 print("\n==============================")
-print("FINAL ANSWER")
-print("==============================")
+print("RESEARCHLENS ANSWER")
+print("==============================\n")
 
 print(answer)
