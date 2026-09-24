@@ -1,7 +1,17 @@
+"""
+Evidence context extraction for ResearchLens.
+
+Uses the configured LLM to extract structured research
+information from retrieved evidence passages.
+"""
+
 import json
 import time
 
-from generation.llm_service import client, MODEL_NAME
+from backend.generation.llm_service import (
+    client,
+    MODEL_NAME
+)
 
 
 def extract_evidence_context(evidence_text):
@@ -11,6 +21,17 @@ def extract_evidence_context(evidence_text):
 
     The model must only extract information explicitly stated
     in the supplied evidence.
+
+    Args:
+        evidence_text: Retrieved research passage.
+
+    Returns:
+        Dictionary containing:
+        - claim
+        - dataset
+        - method
+        - metric
+        - conditions
     """
 
     prompt = f"""

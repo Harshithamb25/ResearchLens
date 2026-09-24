@@ -1,4 +1,4 @@
-from retrieval.embeddings import generate_embedding
+from backend.retrieval.embeddings import generate_embedding
 import numpy as np
 
 
@@ -36,3 +36,4 @@ def calculate_claim_similarity(claim_a, claim_b):
         embedding_a,
         embedding_b
     )
+

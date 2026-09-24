@@ -1,4 +1,4 @@
-from analysis.claim_grouper import group_claims
+from backend.analysis.claim_grouper import group_claims
 
 
 def build_evidence_matrix(evidence_items, threshold=0.75):
@@ -20,3 +20,4 @@ def build_evidence_matrix(evidence_items, threshold=0.75):
         evidence_items,
         threshold=threshold
     )
+

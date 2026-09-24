@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from ingestion.pdf_loader import extract_text_from_pdf
-from ingestion.chunker import create_chunks
-from retrieval.embeddings import generate_embeddings
-from retrieval.vector_store import add_chunks
+from backend.ingestion.pdf_loader import extract_text_from_pdf
+from backend.ingestion.chunker import create_chunks
+from backend.retrieval.embeddings import generate_embeddings
+from backend.retrieval.vector_store import add_chunks
 
 
 PAPERS_DIR = Path("../data/papers")
@@ -66,3 +66,4 @@ def ingest_all_papers():
         results.append(result)
 
     return results
+

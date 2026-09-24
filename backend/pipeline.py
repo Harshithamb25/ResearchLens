@@ -1,36 +1,61 @@
-# This connects the query classifier to actual downstream routes, giving us one central orchestration point.
+"""
+Central orchestration layer for ResearchLens.
 
-from analysis.query_router import classify_query
+This module connects query classification to the
+evidence-grounded research analysis pipeline.
+"""
+
+from backend.analysis.query_router import classify_query
+from backend.analysis.evidence_pipeline import (
+    run_evidence_pipeline
+)
 
 
-def process_query(question):
+def process_query(
+    question,
+    retrieval_k=10,
+    rerank_k=5,
+    claim_threshold=0.75
+):
     """
-    Determine the appropriate ResearchLens
-    processing route for a user question.
+    Process a ResearchLens question.
+
+    Flow:
+
+        Question
+            ↓
+        Query Classification
+            ↓
+        Semantic Retrieval
+            ↓
+        Reranking
+            ↓
+        Evidence Extraction
+            ↓
+        Claim Grouping
+            ↓
+        Cross-Paper Relationship Analysis
+            ↓
+        Evidence Audit
     """
+
+    if not question or not question.strip():
+        raise ValueError(
+            "Question must not be empty."
+        )
 
     query_type = classify_query(question)
 
-    if query_type == "factual":
-        route = "rag"
-
-    elif query_type == "dataset":
-        route = "dataset_analysis"
-
-    elif query_type == "comparison":
-        route = "comparison_analysis"
-
-    elif query_type == "limitation":
-        route = "limitation_analysis"
-
-    elif query_type == "research_gap":
-        route = "research_gap_analysis"
-
-    else:
-        route = "rag"
+    evidence_result = run_evidence_pipeline(
+        question=question,
+        retrieval_k=retrieval_k,
+        rerank_k=rerank_k,
+        claim_threshold=claim_threshold
+    )
 
     return {
         "question": question,
         "query_type": query_type,
-        "route": route
+        "route": "evidence_audit",
+        "result": evidence_result
     }
