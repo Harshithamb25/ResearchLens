@@ -1,9 +1,10 @@
-"""
-Evidence audit metrics for ResearchLens.
 
-The audit summarizes how well a claim is supported by the
-analyzed evidence and how broadly that evidence is sourced
-across research papers.
+"""
+Claim-level evidence audit metrics for ResearchLens.
+
+Distinguishes analysis coverage from evidence sufficiency.
+All percentages describe the evidence supplied to the audit,
+not the completeness of the entire research literature.
 """
 
 from dataclasses import dataclass
@@ -16,14 +17,11 @@ from backend.analysis.cross_paper_analysis import (
 
 @dataclass
 class EvidenceAudit:
-    """
-    Summary of the evidence supporting a research claim.
-    """
-
     claim: str
 
     total_evidence: int
     analyzed_evidence: int
+    unanalyzed_evidence: int
 
     supporting_evidence: int
     qualifying_evidence: int
@@ -33,6 +31,7 @@ class EvidenceAudit:
     source_count: int
 
     evidence_coverage: float
+    evidence_sufficiency: float
     source_diversity: float
     unresolved_rate: float
 
@@ -43,60 +42,73 @@ def audit_evidence_relationships(
     total_evidence: int | None = None
 ) -> EvidenceAudit:
     """
-    Calculate evidence-audit metrics for a claim.
+    Audit the relationship results for one claim.
 
-    Metrics:
+    Coverage:
+        Classified items / candidate evidence items.
 
-    evidence_coverage:
-        Percentage of retrieved evidence that received
-        a relationship analysis.
+    Sufficiency:
+        Items not classified as INSUFFICIENT_EVIDENCE
+        / classified items.
 
-    source_count:
-        Number of distinct research papers contributing
-        analyzed evidence.
+    Source diversity:
+        Distinct source papers / classified items.
 
-    source_diversity:
-        Percentage of analyzed evidence items that come
-        from distinct papers.
-
-        Formula:
-            unique sources / analyzed evidence * 100
-
-        This is a simple provenance-distribution metric,
-        not a statistical diversity index.
-
-    unresolved_rate:
-        Percentage of analyzed evidence classified as
-        POTENTIAL_CONFLICT or INSUFFICIENT_EVIDENCE.
+    Unresolved rate:
+        POTENTIAL_CONFLICT and INSUFFICIENT_EVIDENCE
+        / classified items.
     """
-
-    if total_evidence is None:
-        total_evidence = len(relationships)
 
     analyzed_evidence = len(relationships)
 
+    if total_evidence is None:
+        total_evidence = analyzed_evidence
+
+    if total_evidence < 0:
+        raise ValueError(
+            "Total evidence cannot be negative."
+        )
+
+    if analyzed_evidence > total_evidence:
+        raise ValueError(
+            "Analyzed evidence cannot exceed total evidence."
+        )
+
+    allowed_relationships = {
+        "SUPPORT",
+        "QUALIFY",
+        "POTENTIAL_CONFLICT",
+        "INSUFFICIENT_EVIDENCE",
+    }
+
+    for item in relationships:
+        if item.relationship not in allowed_relationships:
+            raise ValueError(
+                f"Invalid relationship: {item.relationship}"
+            )
+
     supporting_evidence = sum(
-        1
+        item.relationship == "SUPPORT"
         for item in relationships
-        if item.relationship == "SUPPORT"
     )
 
     qualifying_evidence = sum(
-        1
+        item.relationship == "QUALIFY"
         for item in relationships
-        if item.relationship == "QUALIFY"
     )
 
     potential_conflicts = sum(
-        1
+        item.relationship == "POTENTIAL_CONFLICT"
         for item in relationships
-        if item.relationship == "POTENTIAL_CONFLICT"
     )
 
     insufficient_evidence = sum(
-        1
+        item.relationship == "INSUFFICIENT_EVIDENCE"
         for item in relationships
-        if item.relationship == "INSUFFICIENT_EVIDENCE"
+    )
+
+    unanalyzed_evidence = (
+        total_evidence - analyzed_evidence
     )
 
     unique_sources = {
@@ -107,42 +119,48 @@ def audit_evidence_relationships(
 
     source_count = len(unique_sources)
 
-    if total_evidence > 0:
-        evidence_coverage = (
-            analyzed_evidence / total_evidence
-        ) * 100
-    else:
-        evidence_coverage = 0.0
-
-    if analyzed_evidence > 0:
-        source_diversity = (
-            source_count / analyzed_evidence
-        ) * 100
-    else:
-        source_diversity = 0.0
-
-    unresolved_count = (
-        potential_conflicts
-        + insufficient_evidence
+    evidence_coverage = (
+        analyzed_evidence / total_evidence * 100
+        if total_evidence
+        else 0.0
     )
 
-    if analyzed_evidence > 0:
-        unresolved_rate = (
-            unresolved_count / analyzed_evidence
-        ) * 100
-    else:
-        unresolved_rate = 0.0
+    evidence_sufficiency = (
+        (
+            analyzed_evidence - insufficient_evidence
+        ) / analyzed_evidence * 100
+        if analyzed_evidence
+        else 0.0
+    )
+
+    source_diversity = (
+        source_count / analyzed_evidence * 100
+        if analyzed_evidence
+        else 0.0
+    )
+
+    unresolved_count = (
+        potential_conflicts + insufficient_evidence
+    )
+
+    unresolved_rate = (
+        unresolved_count / analyzed_evidence * 100
+        if analyzed_evidence
+        else 0.0
+    )
 
     return EvidenceAudit(
         claim=claim,
         total_evidence=total_evidence,
         analyzed_evidence=analyzed_evidence,
+        unanalyzed_evidence=unanalyzed_evidence,
         supporting_evidence=supporting_evidence,
         qualifying_evidence=qualifying_evidence,
         potential_conflicts=potential_conflicts,
         insufficient_evidence=insufficient_evidence,
         source_count=source_count,
         evidence_coverage=evidence_coverage,
+        evidence_sufficiency=evidence_sufficiency,
         source_diversity=source_diversity,
         unresolved_rate=unresolved_rate
     )
