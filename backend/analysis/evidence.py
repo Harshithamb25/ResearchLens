@@ -21,3 +21,4 @@ class Evidence:
     conditions: Optional[str] = None
 
     retrieval_score: Optional[float] = None
+    chunk_id: int | None = None

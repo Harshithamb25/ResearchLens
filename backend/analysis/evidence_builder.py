@@ -59,6 +59,7 @@ def build_evidence(reranked_results):
             Evidence(
                 paper=item["document"],
                 page=item["page"],
+                chunk_id=item.get("chunk_id"),
                 evidence_text=item["text"],
                 claim=extracted.get("claim"),
                 dataset=extracted.get("dataset"),
@@ -82,7 +83,7 @@ def evidence_to_answer_context(evidence_items):
         {
             "document": evidence.paper,
             "page": evidence.page,
-            "chunk_id": None,
+            "chunk_id": evidence.chunk_id,
             "text": evidence.evidence_text
         }
         for evidence in evidence_items
