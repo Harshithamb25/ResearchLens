@@ -1,14 +1,23 @@
+"""
+Evidence audit metrics for ResearchLens.
+
+The audit summarizes how well a claim is supported by the
+analyzed evidence and how broadly that evidence is sourced
+across research papers.
+"""
+
 from dataclasses import dataclass
 from typing import List
 
-from backend.analysis.cross_paper_analysis import EvidenceRelationship
+from backend.analysis.cross_paper_analysis import (
+    EvidenceRelationship
+)
 
 
 @dataclass
 class EvidenceAudit:
     """
-    Summarizes the evidence coverage and relationship
-    distribution for a research claim.
+    Summary of the evidence supporting a research claim.
     """
 
     claim: str
@@ -24,6 +33,7 @@ class EvidenceAudit:
     source_count: int
 
     evidence_coverage: float
+    source_diversity: float
     unresolved_rate: float
 
 
@@ -33,13 +43,31 @@ def audit_evidence_relationships(
     total_evidence: int | None = None
 ) -> EvidenceAudit:
     """
-    Audit the evidence relationships associated with a claim.
+    Calculate evidence-audit metrics for a claim.
 
-    The audit reports evidence coverage, source diversity,
-    relationship distribution, and unresolved evidence.
+    Metrics:
 
-    No claim is declared objectively true or false.
-    The audit only summarizes the supplied evidence.
+    evidence_coverage:
+        Percentage of retrieved evidence that received
+        a relationship analysis.
+
+    source_count:
+        Number of distinct research papers contributing
+        analyzed evidence.
+
+    source_diversity:
+        Percentage of analyzed evidence items that come
+        from distinct papers.
+
+        Formula:
+            unique sources / analyzed evidence * 100
+
+        This is a simple provenance-distribution metric,
+        not a statistical diversity index.
+
+    unresolved_rate:
+        Percentage of analyzed evidence classified as
+        POTENTIAL_CONFLICT or INSUFFICIENT_EVIDENCE.
     """
 
     if total_evidence is None:
@@ -86,6 +114,13 @@ def audit_evidence_relationships(
     else:
         evidence_coverage = 0.0
 
+    if analyzed_evidence > 0:
+        source_diversity = (
+            source_count / analyzed_evidence
+        ) * 100
+    else:
+        source_diversity = 0.0
+
     unresolved_count = (
         potential_conflicts
         + insufficient_evidence
@@ -108,6 +143,6 @@ def audit_evidence_relationships(
         insufficient_evidence=insufficient_evidence,
         source_count=source_count,
         evidence_coverage=evidence_coverage,
+        source_diversity=source_diversity,
         unresolved_rate=unresolved_rate
     )
-
