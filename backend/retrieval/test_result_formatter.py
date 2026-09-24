@@ -1,4 +1,4 @@
-from retrieval.result_formatter import format_retrieval_results
+from backend.retrieval.result_formatter import format_retrieval_results
 
 
 def test_format_retrieval_results():

@@ -1,5 +1,5 @@
-from retrieval.retriever import search
-from retrieval.reranker import rerank
+from backend.retrieval.retriever import search
+from backend.retrieval.reranker import rerank
 
 
 question = "What datasets are discussed in the research paper?"

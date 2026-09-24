@@ -1,4 +1,4 @@
-from analysis.query_router import classify_query
+from backend.analysis.query_router import classify_query
 
 
 test_questions = [

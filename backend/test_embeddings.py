@@ -1,4 +1,4 @@
-from retrieval.embeddings import generate_embedding
+from backend.retrieval.embeddings import generate_embedding
 
 
 text = "Machine learning can be used to detect cybersecurity threats."

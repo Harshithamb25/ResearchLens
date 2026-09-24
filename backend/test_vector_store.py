@@ -1,29 +1,45 @@
 from pathlib import Path
 
-from ingestion.pdf_loader import extract_text_from_pdf
-from ingestion.chunker import create_chunks
-from retrieval.embeddings import generate_embeddings
-from retrieval.vector_store import add_chunks
+from backend.ingestion.pdf_loader import extract_text_from_pdf
+from backend.ingestion.chunker import create_chunks
+from backend.retrieval.embeddings import generate_embeddings
+from backend.retrieval.vector_store import add_chunks, collection
 
 
-pdf_path = "../data/papers/sample.pdf"
+def test_vector_store_adds_chunks():
+    pdf_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "papers"
+        / "sample.pdf"
+    )
 
-pages = extract_text_from_pdf(pdf_path)
+    pages = extract_text_from_pdf(str(pdf_path))
 
-document_name = Path(pdf_path).name
+    document_name = pdf_path.name
 
-chunks = create_chunks(
-    pages,
-    document_name
-)
+    chunks = create_chunks(
+        pages,
+        document_name
+    )
 
-embeddings = generate_embeddings(chunks)
+    embeddings = generate_embeddings(chunks)
 
-add_chunks(
-    chunks,
-    embeddings
-)
+    add_chunks(
+        chunks,
+        embeddings
+    )
 
-print("Total chunks stored:", len(chunks))
-print("Vector database: ChromaDB")
-print("Collection: research_papers")
+    stored = collection.get(
+        where={"document": document_name}
+    )
+
+    assert stored["ids"]
+    assert len(stored["ids"]) == len(chunks)
+    assert len(stored["documents"]) == len(chunks)
+    assert len(stored["metadatas"]) == len(chunks)
+
+    for metadata in stored["metadatas"]:
+        assert metadata["document"] == document_name
+        assert "page" in metadata
+        assert "chunk_id" in metadata

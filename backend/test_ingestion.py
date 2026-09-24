@@ -1,4 +1,4 @@
-from ingestion.ingest import ingest_all_papers
+from backend.ingestion.ingest import ingest_all_papers
 
 
 results = ingest_all_papers()

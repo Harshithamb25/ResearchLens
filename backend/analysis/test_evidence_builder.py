@@ -1,4 +1,4 @@
-from analysis.evidence_builder import build_evidence
+from backend.analysis.evidence_builder import build_evidence
 
 
 def mock_extract_evidence_context(text):
@@ -19,7 +19,7 @@ def mock_extract_evidence_context(text):
 def test_build_evidence(monkeypatch):
 
     monkeypatch.setattr(
-        "analysis.evidence_builder.extract_evidence_context",
+        "backend.analysis.evidence_builder.extract_evidence_context",
         mock_extract_evidence_context
     )
 
@@ -66,3 +66,5 @@ def test_build_evidence(monkeypatch):
     assert item.conditions == "Test dataset"
 
     assert item.retrieval_score == 8.39
+
+

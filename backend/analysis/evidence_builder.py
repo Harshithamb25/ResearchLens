@@ -12,17 +12,6 @@ from backend.analysis.evidence_extractor import (
 
 
 def build_evidence(reranked_results):
-    """
-    Convert reranked retrieval results into enriched
-    Evidence objects containing extracted research context.
-
-    Args:
-        reranked_results: Retrieval results after reranking.
-
-    Returns:
-        List of Evidence objects.
-    """
-
     evidence_items = []
 
     for item in reranked_results:
@@ -48,3 +37,20 @@ def build_evidence(reranked_results):
         )
 
     return evidence_items
+
+
+def evidence_to_answer_context(evidence_items):
+    """
+    Convert structured Evidence objects into the
+    raw retrieval format expected by generate_answer().
+    """
+
+    return [
+        {
+            "document": evidence.paper,
+            "page": evidence.page,
+            "chunk_id": None,
+            "text": evidence.evidence_text
+        }
+        for evidence in evidence_items
+    ]

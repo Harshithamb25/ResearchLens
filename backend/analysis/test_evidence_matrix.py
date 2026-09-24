@@ -1,5 +1,5 @@
-from analysis.evidence import Evidence
-from analysis.evidence_matrix import build_evidence_matrix
+from backend.analysis.evidence import Evidence
+from backend.analysis.evidence_matrix import build_evidence_matrix
 
 
 def test_build_evidence_matrix():
@@ -37,3 +37,5 @@ def test_build_evidence_matrix():
 
     assert len(matrix[0]["evidence"]) == 2
     assert len(matrix[1]["evidence"]) == 1
+
+

@@ -1,4 +1,4 @@
-from analysis.evidence import Evidence
+from backend.analysis.evidence import Evidence
 
 
 def test_evidence_creation():

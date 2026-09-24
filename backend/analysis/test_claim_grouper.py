@@ -1,5 +1,5 @@
-from analysis.evidence import Evidence
-from analysis.claim_grouper import group_claims
+from backend.analysis.evidence import Evidence
+from backend.analysis.claim_grouper import group_claims
 
 
 def test_group_semantically_similar_claims():
@@ -40,3 +40,5 @@ def test_group_semantically_similar_claims():
 
     assert len(groups[0]["evidence"]) == 2
     assert len(groups[1]["evidence"]) == 1
+
+

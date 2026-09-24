@@ -1,6 +1,6 @@
 import json
 
-import analysis.evidence_extractor as evidence_extractor
+import backend.analysis.evidence_extractor as evidence_extractor
 
 
 MOCK_RESPONSE = {
@@ -63,3 +63,5 @@ def test_evidence_extraction(monkeypatch):
     assert result["metric"] == "Accuracy"
 
     assert result["conditions"]
+
+

@@ -1,5 +1,5 @@
-from analysis.evidence import Evidence
-from analysis.cross_paper_analysis import EvidenceRelationship
+from backend.analysis.evidence import Evidence
+from backend.analysis.cross_paper_analysis import EvidenceRelationship
 
 
 def test_evidence_relationship():
@@ -25,3 +25,5 @@ def test_evidence_relationship():
     assert relationship.page == 5
     assert relationship.relationship == "SUPPORT"
     assert relationship.evidence == evidence
+
+

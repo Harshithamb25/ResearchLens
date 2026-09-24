@@ -1,4 +1,4 @@
-from analysis.semantic_similarity import calculate_claim_similarity
+from backend.analysis.semantic_similarity import calculate_claim_similarity
 
 
 def test_similar_claims_have_high_similarity():
@@ -18,3 +18,5 @@ def test_similar_claims_have_high_similarity():
     print(f"\nSimilarity: {similarity}")
 
     assert similarity > 0.5
+
+

@@ -1,6 +1,6 @@
-from analysis.evidence import Evidence
-from analysis.cross_paper_analysis import EvidenceRelationship
-from analysis.evidence_pipeline import run_evidence_pipeline
+from backend.analysis.evidence import Evidence
+from backend.analysis.cross_paper_analysis import EvidenceRelationship
+from backend.analysis.evidence_pipeline import run_evidence_pipeline
 
 
 def test_evidence_pipeline(monkeypatch):
@@ -88,32 +88,32 @@ def test_evidence_pipeline(monkeypatch):
         ]
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.search",
+        "backend.analysis.evidence_pipeline.search",
         mock_search
     )
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.format_retrieval_results",
+        "backend.analysis.evidence_pipeline.format_retrieval_results",
         mock_format
     )
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.rerank",
+        "backend.analysis.evidence_pipeline.rerank",
         mock_rerank
     )
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.build_evidence",
+        "backend.analysis.evidence_pipeline.build_evidence",
         mock_build_evidence
     )
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.group_claims",
+        "backend.analysis.evidence_pipeline.group_claims",
         mock_group_claims
     )
 
     monkeypatch.setattr(
-        "analysis.evidence_pipeline.build_evidence_relationships",
+        "backend.analysis.evidence_pipeline.build_evidence_relationships",
         mock_relationships
     )
 
@@ -140,3 +140,5 @@ def test_evidence_pipeline(monkeypatch):
     assert audit.source_count == 1
 
     assert audit.unresolved_rate == 0.0
+
+

@@ -1,8 +1,8 @@
 import json
 
-from analysis.evidence import Evidence
+from backend.analysis.evidence import Evidence
 
-import analysis.relationship_analyzer as relationship_analyzer
+import backend.analysis.relationship_analyzer as relationship_analyzer
 
 
 MOCK_RESPONSE = {
@@ -195,3 +195,5 @@ def test_relationships_are_linked_to_evidence(
         relationship.evidence.conditions
         == "Test dataset"
     )
+
+

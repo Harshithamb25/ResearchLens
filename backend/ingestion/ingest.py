@@ -6,8 +6,7 @@ from backend.retrieval.embeddings import generate_embeddings
 from backend.retrieval.vector_store import add_chunks
 
 
-PAPERS_DIR = Path("../data/papers")
-
+PAPERS_DIR = Path("data/papers")
 
 def ingest_paper(pdf_path):
     """

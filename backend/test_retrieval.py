@@ -1,4 +1,4 @@
-from retrieval.retriever import search
+from backend.retrieval.retriever import search
 
 
 query = "What dataset was used in the research paper?"

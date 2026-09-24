@@ -1,6 +1,6 @@
-from analysis.cross_paper_analysis import EvidenceRelationship
-from analysis.evidence import Evidence
-from analysis.evidence_audit import audit_evidence_relationships
+from backend.analysis.cross_paper_analysis import EvidenceRelationship
+from backend.analysis.evidence import Evidence
+from backend.analysis.evidence_audit import audit_evidence_relationships
 
 
 def create_relationship(
@@ -108,3 +108,5 @@ def test_evidence_audit_with_insufficient_evidence():
     assert audit.evidence_coverage == 50.0
 
     assert audit.unresolved_rate == 100.0
+
+
