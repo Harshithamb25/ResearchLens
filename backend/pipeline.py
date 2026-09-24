@@ -1,31 +1,12 @@
+
 """
 Central orchestration layer for ResearchLens.
 
-This module connects query classification to the
-evidence-grounded research analysis pipeline and
-final grounded answer generation.
+Connects query classification, evidence analysis
+and grounded answer generation.
 
-Flow:
-
-    Question
-        ↓
-    Query Classification
-        ↓
-    Semantic Retrieval
-        ↓
-    Reranking
-        ↓
-    Evidence Extraction
-        ↓
-    Claim Grouping
-        ↓
-    Cross-Paper Relationship Analysis
-        ↓
-    Evidence Audit
-        ↓
-    Grounded Answer Generation
-        ↓
-    Final Research Response
+An answer generated from retrieved evidence is not
+automatically considered a completed evidence audit.
 """
 
 from backend.analysis.query_router import classify_query
@@ -38,6 +19,26 @@ from backend.analysis.evidence_builder import (
 from backend.generation.llm_service import generate_answer
 
 
+ANALYSIS_MESSAGES = {
+    "completed": (
+        "Cross-paper evidence analysis completed."
+    ),
+    "partial": (
+        "Cross-paper evidence analysis is incomplete. "
+        "Some claim groups could not be analyzed."
+    ),
+    "failed": (
+        "Cross-paper evidence analysis failed. "
+        "Retrieved passages remain available, but "
+        "their relationships have not been verified."
+    ),
+    "no_evidence": (
+        "No analyzable evidence was available "
+        "for cross-paper analysis."
+    )
+}
+
+
 def process_query(
     question,
     retrieval_k=10,
@@ -45,11 +46,8 @@ def process_query(
     claim_threshold=0.75
 ):
     """
-    Process a ResearchLens research question.
-
-    The pipeline performs evidence retrieval and auditing
-    first, then generates a grounded answer using only
-    the retrieved evidence.
+    Process a research question and return both
+    the grounded answer and audit reliability status.
     """
 
     if not question or not question.strip():
@@ -57,10 +55,8 @@ def process_query(
             "Question must not be empty."
         )
 
-    # 1. Classify the research question
     query_type = classify_query(question)
 
-    # 2. Run the evidence-analysis pipeline
     evidence_result = run_evidence_pipeline(
         question=question,
         retrieval_k=retrieval_k,
@@ -68,12 +64,19 @@ def process_query(
         claim_threshold=claim_threshold
     )
 
-    # 3. Generate a grounded answer only when
-    #    evidence has been successfully retrieved
+    analysis_status = evidence_result["status"]
+
+    if analysis_status not in ANALYSIS_MESSAGES:
+        raise ValueError(
+            f"Unexpected analysis status: {analysis_status}"
+        )
+
+    # An answer may be generated from retrieved passages
+    # even when relationship analysis is incomplete.
+    # Its audit status must remain explicit.
     answer = None
 
     if evidence_result["evidence"]:
-
         answer_context = evidence_to_answer_context(
             evidence_result["evidence"]
         )
@@ -83,12 +86,21 @@ def process_query(
             answer_context
         )
 
-    # 4. Return both the final answer and
-    #    the complete evidence audit
     return {
         "question": question,
         "query_type": query_type,
         "route": "evidence_audit",
         "answer": answer,
+        "answer_generated": answer is not None,
+        "analysis_status": analysis_status,
+        "analysis_message": ANALYSIS_MESSAGES[
+            analysis_status
+        ],
+        "audit_completed": (
+            analysis_status == "completed"
+        ),
+        "failed_group_count": len(
+            evidence_result["analysis_failures"]
+        ),
         "result": evidence_result
     }
