@@ -1,3 +1,4 @@
+
 import json
 import time
 
@@ -15,119 +16,90 @@ ALLOWED_RELATIONSHIPS = {
 
 def analyze_evidence_relationships(claim_group):
     """
-    Analyze the relationship between evidence items
-    belonging to the same semantic claim group.
-
-    The analysis considers research context such as:
-    dataset, method, metric, and conditions.
-
-    Returns:
-        List of dictionaries containing the relationship
-        assigned to each evidence item.
+    Classify each evidence item using its unique position
+    within the current claim group.
     """
-
     claim = claim_group["claim"]
     evidence_items = claim_group["evidence"]
 
-    evidence_text = []
+    if not evidence_items:
+        return []
+
+    sections = []
 
     for index, evidence in enumerate(evidence_items, start=1):
-
-        evidence_text.append(
+        sections.append(
             f"""
-Evidence {index}
-
+Evidence ID: {index}
 Paper: {evidence.paper}
 Page: {evidence.page}
+Chunk ID: {evidence.chunk_id}
 
-Claim:
-{evidence.claim}
-
-Dataset:
-{evidence.dataset}
-
-Method:
-{evidence.method}
-
-Metric:
-{evidence.metric}
-
-Conditions:
-{evidence.conditions}
+Claim: {evidence.claim}
+Dataset: {evidence.dataset}
+Method: {evidence.method}
+Metric: {evidence.metric}
+Conditions: {evidence.conditions}
 
 Evidence text:
 {evidence.evidence_text}
 """
         )
 
-    combined_evidence = (
-        "\n-----------------------------\n"
-        .join(evidence_text)
-    )
+    combined_evidence = "\n----------------\n".join(sections)
 
     prompt = f"""
 You are the cross-paper evidence analysis component
 of ResearchLens.
 
-Analyze the research evidence for the following semantic claim:
-
 CLAIM:
 {claim}
 
-EVIDENCE FROM MULTIPLE PAPERS:
+EVIDENCE:
 {combined_evidence}
 
-For EACH evidence item, determine its relationship to the
-overall claim.
+For EACH evidence item, classify its relationship
+to the claim.
 
-Allowed relationship values:
-
+Allowed relationships:
 SUPPORT
 QUALIFY
 POTENTIAL_CONFLICT
 INSUFFICIENT_EVIDENCE
 
-Important rules:
+Rules:
+1. Use only the supplied evidence.
+2. Consider datasets, methods, metrics and conditions.
+3. Different numerical results are not automatically
+   contradictions.
+4. Use POTENTIAL_CONFLICT only for meaningful
+   disagreements not explained by the stated context.
+5. Use QUALIFY for relevant limitations or exceptions.
+6. Use INSUFFICIENT_EVIDENCE when the passage cannot
+   establish a relationship.
+7. Preserve each Evidence ID exactly.
+8. Return one result per Evidence ID.
+9. Do not invent IDs or omit evidence.
+10. Return valid JSON only.
 
-1. Use ONLY the supplied evidence.
-2. Do not use outside knowledge.
-3. Do not invent missing information.
-4. Consider dataset, method, metric, and conditions.
-5. Different numerical results are NOT automatically a conflict.
-6. If studies use substantially different datasets, methods,
-   metrics, or conditions, do not automatically classify them
-   as conflicting.
-7. Use POTENTIAL_CONFLICT only when the supplied evidence
-   indicates a meaningful disagreement that cannot be explained
-   by the stated context.
-8. Use QUALIFY when the evidence supports the general claim
-   but limits, conditions, or exceptions are reported.
-9. Use INSUFFICIENT_EVIDENCE when the supplied passage does
-   not contain enough information to determine the relationship.
-10. Give a concise evidence-based explanation.
-11. Return ONLY valid JSON.
-12. Do not include markdown.
-
-Required JSON format:
-
+Required format:
 {{
     "relationships": [
         {{
-            "paper": "...",
-            "page": 1,
+            "evidence_id": 1,
             "relationship": "SUPPORT",
-            "explanation": "..."
+            "explanation": "Concise evidence-based reason"
         }}
     ]
 }}
+
+Expected evidence count: {len(evidence_items)}
 """
 
     max_attempts = 3
 
     for attempt in range(max_attempts):
-
         try:
-
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt
@@ -135,61 +107,73 @@ Required JSON format:
 
             result = json.loads(response.text)
 
-            if "relationships" not in result:
+            if not isinstance(result, dict):
+                raise ValueError("Expected a JSON object.")
+
+            relationships = result.get("relationships")
+
+            if not isinstance(relationships, list):
+                raise ValueError("Missing relationships list.")
+
+            if len(relationships) != len(evidence_items):
                 raise ValueError(
-                    "Missing relationships field."
+                    "Relationship count does not match evidence count."
                 )
 
-            relationships = []
+            seen_ids = set()
 
-            for item in result["relationships"]:
+            for item in relationships:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid relationship item.")
 
-                relationship = item.get("relationship")
+                evidence_id = item.get("evidence_id")
 
-                if relationship not in ALLOWED_RELATIONSHIPS:
+                if (
+                    type(evidence_id) is not int
+                    or evidence_id < 1
+                    or evidence_id > len(evidence_items)
+                    or evidence_id in seen_ids
+                ):
                     raise ValueError(
-                        f"Invalid relationship: {relationship}"
+                        f"Invalid or duplicate evidence ID: {evidence_id}"
                     )
 
-                relationships.append(item)
+                seen_ids.add(evidence_id)
 
-            return relationships
+                if item.get("relationship") not in ALLOWED_RELATIONSHIPS:
+                    raise ValueError("Invalid relationship category.")
 
-        except Exception as error:
+                explanation = item.get("explanation")
 
-            if attempt == max_attempts - 1:
-                raise error
+                if (
+                    not isinstance(explanation, str)
+                    or not explanation.strip()
+                ):
+                    raise ValueError("Missing relationship explanation.")
 
-            wait_time = 2 ** attempt
-
-            print(
-                f"Relationship analysis failed. "
-                f"Retrying in {wait_time} seconds..."
+            return sorted(
+                relationships,
+                key=lambda item: item["evidence_id"]
             )
 
+        except Exception:
+            if attempt == max_attempts - 1:
+                raise
+
+            wait_time = 2 ** attempt
+            print(
+                f"Relationship analysis retrying "
+                f"in {wait_time} seconds..."
+            )
             time.sleep(wait_time)
 
 
 def build_evidence_relationships(claim_group):
     """
-    Convert analyzed relationship results into
-    EvidenceRelationship objects linked to the
-    original Evidence objects.
-
-    This preserves the chain:
-
-        Claim
-          ↓
-        Relationship
-          ↓
-        Evidence
-          ↓
-        Paper + Page
+    Link each classification to its exact original
+    Evidence object using the validated Evidence ID.
     """
-
-    analyzed = analyze_evidence_relationships(
-        claim_group
-    )
+    analyzed = analyze_evidence_relationships(claim_group)
 
     evidence_items = claim_group["evidence"]
     claim = claim_group["claim"]
@@ -197,31 +181,17 @@ def build_evidence_relationships(claim_group):
     relationships = []
 
     for item in analyzed:
-
-        matching_evidence = None
-
-        for evidence in evidence_items:
-
-            if (
-                evidence.paper == item["paper"]
-                and evidence.page == item["page"]
-            ):
-                matching_evidence = evidence
-                break
-
-        if matching_evidence is None:
-            continue
+        evidence = evidence_items[item["evidence_id"] - 1]
 
         relationships.append(
             EvidenceRelationship(
                 claim=claim,
-                paper=item["paper"],
-                page=item["page"],
+                paper=evidence.paper,
+                page=evidence.page,
                 relationship=item["relationship"],
                 explanation=item["explanation"],
-                evidence=matching_evidence
+                evidence=evidence
             )
         )
 
     return relationships
-
