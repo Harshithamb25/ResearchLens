@@ -1,22 +1,12 @@
+
 """
 ResearchLens FastAPI application.
 
-This module exposes the ResearchLens research-analysis
-pipeline through a REST API.
-
-Architecture:
-
-    React Frontend
-          ↓
-    FastAPI /query
-          ↓
-    process_query()
-          ↓
-    Evidence Pipeline
-          ↓
-    Evidence Audit
+Exposes research analysis results and explicitly
+reports whether the evidence audit was completed.
 """
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -25,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from backend.pipeline import process_query
 
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="ResearchLens API",
@@ -54,9 +46,7 @@ app.add_middleware(
 # ---------------------------------------------------------
 
 class QueryRequest(BaseModel):
-    """
-    Request body accepted by the /query endpoint.
-    """
+    """Request body accepted by the /query endpoint."""
 
     question: str = Field(
         ...,
@@ -97,10 +87,6 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 def root():
-    """
-    Basic API information endpoint.
-    """
-
     return {
         "name": "ResearchLens API",
         "status": "running",
@@ -110,10 +96,6 @@ def root():
 
 @app.get("/health")
 def health_check():
-    """
-    Health-check endpoint.
-    """
-
     return {
         "status": "healthy"
     }
@@ -128,7 +110,11 @@ def query_research(
     request: QueryRequest
 ) -> dict[str, Any]:
     """
-    Execute the ResearchLens evidence-analysis pipeline.
+    Execute the research pipeline.
+
+    Request success and audit completion are separate:
+    a successfully processed request may have a partial
+    or failed cross-paper audit.
     """
 
     try:
@@ -141,6 +127,8 @@ def query_research(
 
         return {
             "success": True,
+            "analysis_status": result["analysis_status"],
+            "audit_completed": result["audit_completed"],
             "data": result
         }
 
@@ -148,13 +136,19 @@ def query_research(
         raise HTTPException(
             status_code=400,
             detail=str(error)
-        )
+        ) from error
 
     except Exception as error:
+        logger.exception(
+            "ResearchLens query execution failed"
+        )
+
+        # Avoid exposing provider errors, credentials
+        # or internal implementation details.
         raise HTTPException(
             status_code=500,
             detail=(
-                "ResearchLens pipeline execution failed: "
-                f"{str(error)}"
+                "ResearchLens could not process the "
+                "request. Please try again."
             )
-        )
+        ) from error

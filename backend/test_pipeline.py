@@ -1,19 +1,56 @@
+
+import pytest
+
 from backend.pipeline import process_query
 
 
-def test_process_query_orchestrates_evidence_pipeline(monkeypatch):
-    """
-    Verify that process_query:
+QUESTION = "Compare the approaches used in both papers."
 
-    1. Classifies the question.
-    2. Calls the evidence pipeline.
-    3. Converts evidence into answer context.
-    4. Generates a grounded answer.
-    5. Returns the final answer and evidence audit.
+
+@pytest.mark.parametrize(
+    "status, expected_audit_completed, expected_failures",
+    [
+        ("completed", True, 0),
+        ("partial", False, 1),
+        ("failed", False, 1),
+        ("no_evidence", False, 0),
+    ]
+)
+def test_process_query_orchestrates_evidence_pipeline(
+    monkeypatch,
+    status,
+    expected_audit_completed,
+    expected_failures
+):
+    """
+    Verify answer generation and audit status
+    are reported independently.
     """
 
     def mock_classify_query(question):
         return "comparison"
+
+    evidence = [
+        {
+            "paper": "paper1.pdf",
+            "page": 5,
+            "evidence_text": (
+                "Deep learning improves intrusion detection."
+            )
+        }
+    ]
+
+    failures = (
+        [
+            {
+                "group_index": 1,
+                "claim": "Example claim",
+                "reason": "relationship_analysis_failed"
+            }
+        ]
+        if expected_failures
+        else []
+    )
 
     def mock_evidence_pipeline(
         question,
@@ -21,44 +58,48 @@ def test_process_query_orchestrates_evidence_pipeline(monkeypatch):
         rerank_k,
         claim_threshold
     ):
+        has_evidence = status != "no_evidence"
+
         return {
             "question": question,
-            "evidence": [
-                {
-                    "paper": "paper1.pdf",
-                    "page": 5,
-                    "evidence_text": "Deep learning improves intrusion detection."
-                }
-            ],
-            "claim_groups": [
-                {
-                    "claim": "Deep learning improves intrusion detection."
-                }
-            ],
-            "relationships": [
-                {
-                    "relationship": "SUPPORT"
-                }
-            ],
-            "audits": [
-                {
-                    "evidence_coverage": 100.0,
-                    "unresolved_rate": 0.0
-                }
-            ]
+            "status": status,
+            "evidence": evidence if has_evidence else [],
+            "claim_groups": (
+                [{"claim": "Example claim"}]
+                if has_evidence
+                else []
+            ),
+            "relationships": (
+                [{"relationship": "SUPPORT"}]
+                if status in ("completed", "partial")
+                else []
+            ),
+            "audits": (
+                [{"evidence_coverage": 100.0}]
+                if status == "completed"
+                else []
+            ),
+            "analysis_failures": failures
         }
 
-    def mock_evidence_to_answer_context(evidence):
+    def mock_evidence_to_answer_context(items):
+        assert items == evidence
+
         return [
             {
                 "document": "paper1.pdf",
                 "page": 5,
                 "chunk_id": None,
-                "text": "Deep learning improves intrusion detection."
+                "text": (
+                    "Deep learning improves intrusion detection."
+                )
             }
         ]
 
-    def mock_generate_answer(question, evidence):
+    def mock_generate_answer(question, context):
+        assert question == QUESTION
+        assert context
+
         return (
             "Deep learning improves intrusion detection "
             "[paper1.pdf, Page 5]."
@@ -85,35 +126,36 @@ def test_process_query_orchestrates_evidence_pipeline(monkeypatch):
     )
 
     result = process_query(
-        question="Compare the approaches used in both papers.",
+        question=QUESTION,
         retrieval_k=10,
         rerank_k=5,
         claim_threshold=0.75
     )
 
-    assert result["question"] == (
-        "Compare the approaches used in both papers."
-    )
-
+    assert result["question"] == QUESTION
     assert result["query_type"] == "comparison"
-
     assert result["route"] == "evidence_audit"
 
-    assert result["answer"] is not None
+    assert result["analysis_status"] == status
+    assert result["audit_completed"] is expected_audit_completed
+    assert result["failed_group_count"] == expected_failures
+    assert result["analysis_message"]
 
-    assert "Deep learning improves intrusion detection" in result["answer"]
+    if status == "no_evidence":
+        assert result["answer"] is None
+        assert result["answer_generated"] is False
+        assert result["result"]["evidence"] == []
+    else:
+        assert result["answer_generated"] is True
+        assert "Deep learning improves" in result["answer"]
+        assert result["result"]["evidence"]
 
-    assert "result" in result
+    if status == "completed":
+        assert result["result"]["audits"][0][
+            "evidence_coverage"
+        ] == 100.0
 
-    assert result["result"]["evidence"]
 
-    assert result["result"]["claim_groups"]
-
-    assert result["result"]["relationships"]
-
-    assert result["result"]["audits"]
-
-    assert (
-        result["result"]["audits"][0]["evidence_coverage"]
-        == 100.0
-    )
+def test_process_query_rejects_empty_question():
+    with pytest.raises(ValueError):
+        process_query("   ")
