@@ -80,28 +80,14 @@ def test_real_evidence_pipeline(monkeypatch):
         assert evidence.conditions is not None
 
 
+
 def setup_mock_pipeline(monkeypatch, claim_groups):
     """
-    Replace retrieval, reranking and evidence
-    preparation with deterministic test data.
+    Mock the current source-aware retrieval pipeline.
+
+    Keep retrieval, reranking, and evidence extraction
+    deterministic so these tests isolate audit failures.
     """
-    monkeypatch.setattr(
-        evidence_pipeline,
-        "search",
-        lambda question, top_k: {"mock": True}
-    )
-
-    monkeypatch.setattr(
-        evidence_pipeline,
-        "format_retrieval_results",
-        lambda results: [{"text": "Mock passage"}]
-    )
-
-    monkeypatch.setattr(
-        evidence_pipeline,
-        "rerank",
-        lambda question, results, top_k: results
-    )
 
     all_evidence = [
         item
@@ -109,16 +95,68 @@ def setup_mock_pipeline(monkeypatch, claim_groups):
         for item in group["evidence"]
     ]
 
+    papers = sorted({
+        item.paper
+        for item in all_evidence
+    })
+
+    candidates = [
+        {
+            "document": paper,
+            "page": 1,
+            "chunk_id": index,
+            "text": f"Mock passage from {paper}",
+        }
+        for index, paper in enumerate(papers)
+    ]
+
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "search_across_papers",
+        lambda question, per_paper_k, expand_queries: {
+            "mock": True
+        },
+    )
+
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "format_retrieval_results",
+        lambda results: candidates,
+    )
+
+    def mock_rerank(question, results, top_k):
+        return [
+            {
+                **item,
+                "reranker_score": 1.0,
+            }
+            for item in results[:top_k]
+        ]
+
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "rerank",
+        mock_rerank,
+    )
+
     monkeypatch.setattr(
         evidence_pipeline,
         "build_evidence",
-        lambda results: all_evidence
+        lambda results: all_evidence,
     )
 
     monkeypatch.setattr(
         evidence_pipeline,
         "group_claims",
-        lambda evidence, threshold: claim_groups
+        lambda evidence, threshold: claim_groups,
+    )
+
+    # These tests exercise claim-audit failure handling,
+    # not Gemini-based cross-paper theme comparison.
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "compare_cross_paper_themes",
+        lambda themes: [],
     )
 
 
@@ -217,6 +255,7 @@ def test_complete_analysis_failure(monkeypatch):
         assert audit.unanalyzed_evidence == 1
 
 
+
 def test_incomplete_relationship_results(monkeypatch):
     group = {
         "claim": "Claim A",
@@ -224,14 +263,18 @@ def test_incomplete_relationship_results(monkeypatch):
             SimpleNamespace(
                 paper="paperA.pdf",
                 page=1,
-                chunk_id=1
+                chunk_id=1,
+                claim="Claim A",
+                evidence_text="First example passage.",
             ),
             SimpleNamespace(
                 paper="paperA.pdf",
                 page=1,
-                chunk_id=2
-            )
-        ]
+                chunk_id=2,
+                claim="Claim A",
+                evidence_text="Second example passage.",
+            ),
+        ],
     }
 
     setup_mock_pipeline(monkeypatch, [group])
@@ -245,9 +288,9 @@ def test_incomplete_relationship_results(monkeypatch):
                 paper="paperA.pdf",
                 page=1,
                 relationship="SUPPORT",
-                evidence=group["evidence"][0]
+                evidence=group["evidence"][0],
             )
-        ]
+        ],
     )
 
     result = run_evidence_pipeline("Analyze Claim A")
@@ -262,3 +305,97 @@ def test_incomplete_relationship_results(monkeypatch):
     assert audit.analyzed_evidence == 0
     assert audit.unanalyzed_evidence == 2
     assert audit.evidence_coverage == 0.0
+
+
+def test_additional_evidence_discovers_cross_paper_theme(
+    monkeypatch,
+):
+    """
+    A shared theme may be discovered from additional
+    candidates even when the main evidence has none.
+    """
+
+    initial_evidence = [
+        SimpleNamespace(
+            paper="sample.pdf",
+            page=10,
+            chunk_id=1,
+            claim="Dataset construction suffers from class imbalance.",
+        ),
+        SimpleNamespace(
+            paper="paper2.pdf",
+            page=2,
+            chunk_id=2,
+            claim="Intrusion detection suffers from false positives.",
+        ),
+    ]
+
+    additional_evidence = [
+        SimpleNamespace(
+            paper="paper2.pdf",
+            page=8,
+            chunk_id=3,
+            claim="Limited dataset quality affects generalizability.",
+        ),
+    ]
+
+    selected = [
+        {
+            "document": "sample.pdf",
+            "page": 10,
+            "chunk_id": 1,
+            "text": "Initial dataset passage.",
+        },
+        {
+            "document": "paper2.pdf",
+            "page": 2,
+            "chunk_id": 2,
+            "text": "Initial detection-error passage.",
+        },
+    ]
+
+    extra_candidate = {
+        "document": "paper2.pdf",
+        "page": 8,
+        "chunk_id": 3,
+        "text": "Additional dataset passage.",
+    }
+
+    candidates = selected + [extra_candidate]
+
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "_select_evidence",
+        lambda question, candidates, limit: candidates[:limit],
+    )
+
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "build_evidence",
+        lambda results: additional_evidence,
+    )
+
+    themes = evidence_pipeline._discover_additional_themes(
+        question="What challenges affect intrusion detection?",
+        candidates=candidates,
+        selected_results=selected,
+        evidence_items=initial_evidence,
+    )
+
+    dataset_theme = next(
+        theme
+        for theme in themes
+        if theme["theme_id"] == "DATASET_LIMITATIONS"
+    )
+
+    assert dataset_theme["cross_paper"] is True
+    assert dataset_theme["source_count"] == 2
+
+    assert {
+        item.paper
+        for item in dataset_theme["evidence"]
+    } == {"sample.pdf", "paper2.pdf"}
+
+    # Additional findings must not silently alter
+    # the main answer's evidence.
+    assert len(initial_evidence) == 2

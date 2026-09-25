@@ -1,15 +1,18 @@
-# Persistent ChromaDB vector store for research paper chunks.
+
+"""Persistent ChromaDB vector store for research paper chunks."""
+
+from pathlib import Path
 
 import chromadb
 
 
-# Create a persistent ChromaDB client.
-client = chromadb.PersistentClient(
-    path="../chroma_db"
-)
+# Always use the same database location, regardless of
+# the terminal's current working directory.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+CHROMA_PATH = PROJECT_ROOT / "chroma_db"
 
+client = chromadb.PersistentClient(path=str(CHROMA_PATH))
 
-# Create or reuse the research paper collection.
 collection = client.get_or_create_collection(
     name="research_papers"
 )
@@ -17,45 +20,51 @@ collection = client.get_or_create_collection(
 
 def add_chunks(chunks, embeddings):
     """
-    Store research paper chunks, embeddings, and metadata.
+    Replace the indexed chunks for one paper.
 
-    If the same document is ingested again, its existing
-    chunks are removed before the new version is stored.
+    Each chunk retains its document name, page number
+    and chunk ID for evidence traceability.
     """
 
     if not chunks:
         return
 
-    # Identify the document being ingested.
-    document_name = chunks[0]["document"]
-
-    # Check whether this document already exists.
-    existing = collection.get(
-        where={
-            "document": document_name
-        }
-    )
-
-    # Remove the previous version of this document.
-    if existing["ids"]:
-        collection.delete(
-            ids=existing["ids"]
+    if len(chunks) != len(embeddings):
+        raise ValueError(
+            "The number of chunks and embeddings must match."
         )
 
-    # Create unique IDs using document name + chunk ID.
+    document_names = {chunk["document"] for chunk in chunks}
+
+    if len(document_names) != 1:
+        raise ValueError(
+            "add_chunks expects chunks from exactly one document."
+        )
+
+    document_name = chunks[0]["document"]
+
     ids = [
         f"{chunk['document']}_{chunk['chunk_id']}"
         for chunk in chunks
     ]
 
-    # Store the new chunks and their embeddings.
+    # Delete the previous chunks for this document.
+    existing = collection.get(
+        where={"document": document_name}
+    )
+
+    if existing["ids"]:
+        collection.delete(ids=existing["ids"])
+
+    # Insert the newly extracted and embedded chunks.
     collection.add(
         ids=ids,
-        embeddings=embeddings.tolist(),
-        documents=[
-            chunk["text"]
-            for chunk in chunks
-        ],
+        embeddings=(
+            embeddings.tolist()
+            if hasattr(embeddings, "tolist")
+            else embeddings
+        ),
+        documents=[chunk["text"] for chunk in chunks],
         metadatas=[
             {
                 "document": chunk["document"],

@@ -1,15 +1,12 @@
+
 """
 Evidence context extraction for ResearchLens.
 
-Uses the configured LLM to extract structured research
-information from retrieved evidence passages.
+Extracts source-grounded research claims and supporting
+context from individual or batched research passages.
 
-The module supports both:
-- single-passage extraction
-- batch extraction for multiple passages
-
-Batch extraction is preferred by the main pipeline because
-it reduces the number of LLM requests.
+A claim may be qualitative or quantitative. Missing
+information must never be invented.
 """
 
 import json
@@ -17,7 +14,7 @@ import time
 
 from backend.generation.llm_service import (
     client,
-    MODEL_NAME
+    MODEL_NAME,
 )
 
 
@@ -26,14 +23,40 @@ REQUIRED_FIELDS = [
     "dataset",
     "method",
     "metric",
-    "conditions"
+    "conditions",
 ]
+
+
+EXTRACTION_RULES = """
+Rules:
+
+- Use ONLY information explicitly stated in the passage.
+- Do NOT use outside knowledge or invent findings.
+- A claim is an explicit research assertion, observation,
+  conclusion, limitation, challenge, or reported result.
+- Claims may be qualitative. They do not require a
+  numerical metric, named dataset, or experimental result.
+- Extract the most relevant substantive claim from
+  the passage.
+- Preserve the original meaning of the source.
+- Do not turn a proposed method into a proven result.
+- If the passage contains only references, author details,
+  copyright information, or unrelated text, return null
+  for the claim.
+- If no substantive claim is explicitly stated, return null.
+- Extract dataset, method, metric, and conditions only
+  when explicitly stated. Otherwise return null.
+- Never invent missing information.
+- Keep each extracted field concise.
+- Return ONLY valid JSON.
+- Do not include markdown or explanations.
+"""
 
 
 def _normalize_result(result):
     """
-    Ensure that an extracted evidence result contains
-    all required fields.
+    Ensure every extraction result contains the required
+    fields. Missing or empty fields are represented by None.
     """
 
     if not isinstance(result, dict):
@@ -44,37 +67,75 @@ def _normalize_result(result):
     normalized = {}
 
     for field in REQUIRED_FIELDS:
-        normalized[field] = result.get(field)
+        value = result.get(field)
+
+        if isinstance(value, str):
+            value = value.strip()
+
+            if not value or value.lower() in {
+                "null",
+                "none",
+                "n/a",
+                "not specified",
+            }:
+                value = None
+
+        normalized[field] = value
 
     return normalized
 
 
+def _parse_json_response(response):
+    """
+    Parse the model's JSON response.
+
+    Handles an occasional Markdown code fence without
+    changing or inventing any extracted information.
+    """
+
+    response_text = response.text
+
+    if not response_text:
+        raise ValueError(
+            "Evidence extraction returned an empty response."
+        )
+
+    response_text = response_text.strip()
+
+    if response_text.startswith("```"):
+        lines = response_text.splitlines()
+
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+
+        response_text = "\n".join(lines).strip()
+
+    return json.loads(response_text)
+
+
 def extract_evidence_context(evidence_text):
     """
-    Extract structured research information from a single
-    evidence passage.
-
-    This function is kept for compatibility with existing
-    tests and any future single-passage use cases.
-
-    Args:
-        evidence_text: Retrieved research passage.
+    Extract structured research information from one passage.
 
     Returns:
-        Dictionary containing:
-        - claim
-        - dataset
-        - method
-        - metric
-        - conditions
+        {
+            "claim": str | None,
+            "dataset": str | None,
+            "method": str | None,
+            "metric": str | None,
+            "conditions": str | None
+        }
     """
 
     prompt = f"""
-You are an evidence extraction component of ResearchLens.
+You are the evidence extraction component of ResearchLens.
 
 Analyze ONLY the research passage provided below.
 
-Extract:
+Extract these five fields:
 
 1. claim
 2. dataset
@@ -82,55 +143,44 @@ Extract:
 4. metric
 5. conditions
 
-Rules:
-
-- Use ONLY information explicitly stated in the passage.
-- Do NOT use outside knowledge.
-- Do NOT infer missing information.
-- If a field is not explicitly stated, return null.
-- Keep the extracted information concise.
-- Return ONLY valid JSON.
-- Do not include markdown.
-- Do not add explanations.
+{EXTRACTION_RULES}
 
 Required JSON format:
 
 {{
-    "claim": "...",
-    "dataset": "...",
-    "method": "...",
-    "metric": "...",
-    "conditions": "..."
+    "claim": "An explicit research claim or null",
+    "dataset": null,
+    "method": null,
+    "metric": null,
+    "conditions": null
 }}
 
 RESEARCH PASSAGE:
+
 {evidence_text}
 """
 
     max_attempts = 3
 
     for attempt in range(max_attempts):
-
         try:
-
             response = client.models.generate_content(
                 model=MODEL_NAME,
-                contents=prompt
+                contents=prompt,
             )
 
-            result = json.loads(response.text)
+            result = _parse_json_response(response)
 
             return _normalize_result(result)
 
-        except Exception as error:
-
+        except Exception:
             if attempt == max_attempts - 1:
-                raise error
+                raise
 
             wait_time = 2 ** attempt
 
             print(
-                f"Evidence extraction failed. "
+                "Evidence extraction failed. "
                 f"Retrying in {wait_time} seconds..."
             )
 
@@ -139,23 +189,11 @@ RESEARCH PASSAGE:
 
 def extract_evidence_context_batch(evidence_texts):
     """
-    Extract structured research information from multiple
-    evidence passages using a single LLM request.
+    Extract structured information from multiple passages
+    in one Gemini request.
 
-    Args:
-        evidence_texts:
-            List of retrieved research passages.
-
-    Returns:
-        List of dictionaries containing:
-        - claim
-        - dataset
-        - method
-        - metric
-        - conditions
-
-    The returned list preserves the same order as the
-    input evidence_texts.
+    Each passage is analyzed independently, and the
+    returned results must match the original input order.
     """
 
     if not evidence_texts:
@@ -165,29 +203,32 @@ def extract_evidence_context_batch(evidence_texts):
 
     for index, evidence_text in enumerate(
         evidence_texts,
-        start=1
+        start=1,
     ):
         evidence_sections.append(
             f"""
 EVIDENCE {index}
 
 RESEARCH PASSAGE:
+
 {evidence_text}
 """
         )
 
-    combined_evidence = "\n-----------------------------\n".join(
-        evidence_sections
+    combined_evidence = (
+        "\n-----------------------------\n".join(
+            evidence_sections
+        )
     )
 
     prompt = f"""
-You are an evidence extraction component of ResearchLens.
+You are the evidence extraction component of ResearchLens.
 
-You will receive multiple research evidence passages.
+You will receive multiple research passages.
 
 Analyze EACH passage independently.
 
-For every passage, extract:
+For EVERY passage, extract:
 
 1. claim
 2. dataset
@@ -195,19 +236,15 @@ For every passage, extract:
 4. metric
 5. conditions
 
-Rules:
+{EXTRACTION_RULES}
 
-- Use ONLY information explicitly stated in each passage.
-- Do NOT use outside knowledge.
-- Do NOT infer missing information.
-- If a field is not explicitly stated, return null.
-- Keep extracted information concise.
-- Do not mix information between different evidence passages.
-- Preserve the original evidence order.
-- Return exactly one result for each evidence passage.
-- Return ONLY valid JSON.
-- Do not include markdown.
-- Do not add explanations.
+Additional batch rules:
+
+- Do not mix information between passages.
+- Preserve the original passage order.
+- Return exactly one result for each input passage.
+- Use evidence_index values starting at 1.
+- Do not omit a passage even if its claim is null.
 
 Required JSON format:
 
@@ -215,11 +252,11 @@ Required JSON format:
     "results": [
         {{
             "evidence_index": 1,
-            "claim": "...",
-            "dataset": "...",
-            "method": "...",
-            "metric": "...",
-            "conditions": "..."
+            "claim": "An explicit research claim or null",
+            "dataset": null,
+            "method": null,
+            "metric": null,
+            "conditions": null
         }}
     ]
 }}
@@ -232,19 +269,18 @@ There are {len(evidence_texts)} evidence passages.
     max_attempts = 3
 
     for attempt in range(max_attempts):
-
         try:
-
             response = client.models.generate_content(
                 model=MODEL_NAME,
-                contents=prompt
+                contents=prompt,
             )
 
-            result = json.loads(response.text)
+            result = _parse_json_response(response)
 
             if not isinstance(result, dict):
                 raise ValueError(
-                    "Batch extraction result must be a JSON object."
+                    "Batch extraction result must be "
+                    "a JSON object."
                 )
 
             results = result.get("results")
@@ -259,28 +295,29 @@ There are {len(evidence_texts)} evidence passages.
                 raise ValueError(
                     "Batch extraction returned "
                     f"{len(results)} results for "
-                    f"{len(evidence_texts)} evidence passages."
+                    f"{len(evidence_texts)} passages."
                 )
 
             normalized_results = []
 
             for index, item in enumerate(results):
-
                 if not isinstance(item, dict):
                     raise ValueError(
-                        f"Invalid extraction result at index {index}."
+                        "Invalid extraction result "
+                        f"at index {index}."
                     )
 
                 expected_index = index + 1
+
                 actual_index = item.get(
                     "evidence_index",
-                    expected_index
+                    expected_index,
                 )
 
                 if actual_index != expected_index:
                     raise ValueError(
-                        "Evidence ordering mismatch in "
-                        "batch extraction response."
+                        "Evidence ordering mismatch "
+                        "in batch extraction response."
                     )
 
                 normalized_results.append(
@@ -289,15 +326,14 @@ There are {len(evidence_texts)} evidence passages.
 
             return normalized_results
 
-        except Exception as error:
-
+        except Exception:
             if attempt == max_attempts - 1:
-                raise error
+                raise
 
             wait_time = 2 ** attempt
 
             print(
-                f"Batch evidence extraction failed. "
+                "Batch evidence extraction failed. "
                 f"Retrying in {wait_time} seconds..."
             )
 

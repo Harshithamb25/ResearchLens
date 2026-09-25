@@ -63,6 +63,7 @@ def test_process_query_orchestrates_evidence_pipeline(
         return {
             "question": question,
             "status": status,
+            "cross_paper_evidence": False,
             "evidence": evidence if has_evidence else [],
             "claim_groups": (
                 [{"claim": "Example claim"}]
