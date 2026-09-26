@@ -157,3 +157,109 @@
   .spinning { animation: none; }
   .evidence-card { transition: none; }
 }
+
+/* Citation validation */
+
+.citation-panel {
+  margin-top: 16px;
+  padding: 19px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.citation-panel-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.citation-panel-heading > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.citation-panel-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.citation-panel-heading strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.citation-status {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.citation-structurally_valid {
+  border-color: #67b993;
+}
+
+.citation-structurally_valid .citation-panel-heading > svg,
+.citation-structurally_valid .citation-status {
+  color: #299461;
+}
+
+.citation-review_required {
+  border-color: #e5bd66;
+}
+
+.citation-review_required .citation-panel-heading > svg,
+.citation-review_required .citation-status {
+  color: #c38c29;
+}
+
+.citation-invalid_citations {
+  border-color: #e5a4a4;
+}
+
+.citation-invalid_citations .citation-panel-heading > svg,
+.citation-invalid_citations .citation-status {
+  color: #d05d5d;
+}
+
+.citation-count {
+  margin: 17px 0 11px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.citation-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.citation-metrics span {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.citation-issues {
+  margin-top: 16px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.citation-issues ul {
+  margin: 9px 0 0;
+  padding-left: 19px;
+  overflow-wrap: anywhere;
+}
+
+.citation-note {
+  margin: 17px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}

@@ -989,6 +989,86 @@ function App() {
                         </div>
                       </div>
 
+                      {result.citation_validation && (
+  <section
+    className={`citation-panel citation-${result.citation_validation.status}`}
+    aria-label="Citation validation"
+  >
+    <div className="citation-panel-heading">
+      <ShieldCheck size={20} />
+
+      <div>
+        <strong>Citation validation</strong>
+
+        <span className="citation-status">
+          {result.citation_validation.status ===
+          "structurally_valid"
+            ? "Structurally valid"
+            : result.citation_validation.status ===
+                "review_required"
+              ? "Review required"
+              : "Invalid citations detected"}
+        </span>
+      </div>
+    </div>
+
+    <p className="citation-count">
+      {result.citation_validation.valid_citation_count} of{" "}
+      {result.citation_validation.checked_citation_count}{" "}
+      citations valid
+    </p>
+
+    <div className="citation-metrics">
+      <span>
+        {result.citation_validation.invalid_citations.length}{" "}
+        invalid
+      </span>
+
+      <span>
+        {result.citation_validation.malformed_citations.length}{" "}
+        malformed
+      </span>
+
+      <span>
+        {result.citation_validation.uncited_passage_warnings.length}{" "}
+        uncited-passage warnings
+      </span>
+    </div>
+
+    {result.citation_validation.invalid_citations.length > 0 && (
+      <div className="citation-issues">
+        <strong>Invalid references</strong>
+        <ul>
+          {result.citation_validation.invalid_citations.map(
+            (item, index) => (
+              <li key={index}>{item.citation}</li>
+            )
+          )}
+        </ul>
+      </div>
+    )}
+
+    {result.citation_validation.malformed_citations.length > 0 && (
+      <div className="citation-issues">
+        <strong>Malformed references</strong>
+        <ul>
+          {result.citation_validation.malformed_citations.map(
+            (item, index) => (
+              <li key={index}>{item}</li>
+            )
+          )}
+        </ul>
+      </div>
+    )}
+
+    <p className="citation-note">
+      Structural validation checks document and page
+      references. It does not establish that a cited
+      passage supports the associated claim.
+    </p>
+  </section>
+)}
+
                       <section className="answer-section">
                         <div className="result-section-title">
                           <Sparkles

@@ -81,6 +81,24 @@ export interface EvidenceResult {
   cross_paper_theme_count?: number;
 }
 
+export interface CitationValidation {
+  status:
+    | "structurally_valid"
+    | "review_required"
+    | "invalid_citations";
+  checked_citation_count: number;
+  valid_citation_count: number;
+  invalid_citations: {
+    citation: string;
+    document: string;
+    page: number;
+    valid_source: boolean;
+  }[];
+  malformed_citations: string[];
+  uncited_passage_warnings: string[];
+  note: string;
+}
+
 export interface ResearchResult {
   question: string;
   query_type: string;
@@ -92,6 +110,7 @@ export interface ResearchResult {
   audit_completed: boolean;
   failed_group_count: number;
   result: EvidenceResult;
+  citation_validation?: CitationValidation | null;
 }
 
 export interface QueryResponse {
