@@ -4,6 +4,7 @@ from backend.analysis.query_router import classify_query
 from backend.analysis.evidence_pipeline import run_evidence_pipeline
 from backend.analysis.evidence_builder import evidence_to_answer_context
 from backend.generation.llm_service import generate_answer
+from backend.analysis.citation_validator import validate_answer_citations
 
 
 def _analysis_message(status, cross_paper_evidence):
@@ -30,11 +31,7 @@ def _analysis_message(status, cross_paper_evidence):
 
 
 def _comparison_source_context(evidence_result, main_context):
-    """Include raw passages cited by thematic comparisons, including discovery-only ones.
-
-    Never supply a comparison finding as if it were the original passage.
-    Only include additional passages actually present in the pipeline's themes.
-    """
+    """Include original passages used by thematic comparisons, including discovery-only ones."""
     comparisons = evidence_result.get("theme_comparisons") or []
     themes = evidence_result.get("themes") or []
     main_keys = {
@@ -79,12 +76,11 @@ def process_query(question, retrieval_k=10, rerank_k=5, claim_threshold=0.75):
     )
     analysis_status = evidence_result["status"]
     answer = None
+    citation_validation = None
 
     if evidence_result["evidence"]:
         answer_context = evidence_to_answer_context(evidence_result["evidence"])
         comparisons = evidence_result.get("theme_comparisons") or []
-        # Preserve the existing two-argument call when no comparisons exist.
-        # This also keeps the current single-paper behavior unchanged.
         if comparisons:
             answer_context.extend(
                 _comparison_source_context(evidence_result, answer_context)
@@ -97,6 +93,8 @@ def process_query(question, retrieval_k=10, rerank_k=5, claim_threshold=0.75):
             )
         else:
             answer = generate_answer(question, answer_context)
+        if answer is not None:
+            citation_validation = validate_answer_citations(answer, answer_context)
 
     return {
         "question": question,
@@ -104,6 +102,7 @@ def process_query(question, retrieval_k=10, rerank_k=5, claim_threshold=0.75):
         "route": "evidence_audit",
         "answer": answer,
         "answer_generated": answer is not None,
+        "citation_validation": citation_validation,
         "analysis_status": analysis_status,
         "analysis_message": _analysis_message(
             analysis_status, evidence_result["cross_paper_evidence"]
