@@ -5,6 +5,7 @@ import {
   type FormEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import PaperLibrary from "./PaperLibrary";
 import {
   AlertCircle,
   ArrowLeft,
@@ -1485,37 +1486,31 @@ function App() {
               </aside>
             )}
           </div>
-        ) : (
-          <main className="secondary-page">
-            <div className="secondary-icon">
-              {view === "library" ? (
-                <Library size={27} />
-              ) : (
-                <History size={27} />
-              )}
-            </div>
+        
+) : view === "library" ? (
+  <PaperLibrary onStartResearch={newResearch} />
+) : (
+  <main className="secondary-page">
+    <div className="secondary-icon">
+      <History size={27} />
+    </div>
 
-            <h1>
-              {view === "library"
-                ? "Paper library"
-                : "Research history"}
-            </h1>
+    <h1>Research history</h1>
 
-            <p>
-              {view === "library"
-                ? "Your indexed research papers and their source details will appear here when we implement library management."
-                : "Previous research sessions will appear here when we implement session storage."}
-            </p>
+    <p>
+      Previous research sessions will appear here
+      when we implement session storage.
+    </p>
 
-            <button
-              className="secondary-action"
-              onClick={newResearch}
-            >
-              Start new research
-              <ArrowRight size={17} />
-            </button>
-          </main>
-        )}
+    <button
+      className="secondary-action"
+      onClick={newResearch}
+    >
+      Start new research
+      <ArrowRight size={17} />
+    </button>
+  </main>
+)}
       </div>
 
       {sourceDialogOpen && selectedItem && (

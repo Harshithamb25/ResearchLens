@@ -176,3 +176,63 @@ export async function checkBackendHealth(): Promise<boolean> {
     return false;
   }
 }
+
+
+export interface LibraryPaper {
+  filename: string;
+  size_bytes: number;
+  indexed_chunks: number;
+  indexed: boolean;
+}
+
+export interface PaperLibraryResponse {
+  papers: LibraryPaper[];
+  total: number;
+}
+
+export async function getPapers(): Promise<PaperLibraryResponse> {
+  const response = await fetch(`${API_URL}/papers`);
+
+  if (!response.ok) {
+    throw new Error("Could not load the paper library.");
+  }
+
+  return response.json();
+}
+
+export async function uploadPaper(
+  file: File
+): Promise<{
+  success: boolean;
+  message: string;
+  paper: {
+    document: string;
+    pages: number;
+    chunks: number;
+  };
+}> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_URL}/papers/upload`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let message = "The PDF could not be uploaded.";
+
+    try {
+      const error = await response.json();
+      if (typeof error.detail === "string") {
+        message = error.detail;
+      }
+    } catch {
+      // Keep the default message if the response is not JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  return response.json();
+}
