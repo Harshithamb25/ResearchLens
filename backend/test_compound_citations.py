@@ -1,5 +1,5 @@
 
-"""Regression tests for compound research citations."""
+"""Regression tests for research citation validation."""
 
 import pytest
 
@@ -15,21 +15,29 @@ SOURCES = [
 
 
 @pytest.mark.parametrize(
-    "citation, expected_count",
+    "citations, expected_count",
     [
         ("[paper2.pdf, Page 2]", 1),
-        ("[paper2.pdf, Page 1, Page 2]", 2),
-        ("[paper2.pdf, Page 2; sample.pdf, Page 4]", 2),
         (
-            "[paper2.pdf, Page 1, Page 2; sample.pdf, Page 4]",
+            "[paper2.pdf, Page 1] [paper2.pdf, Page 2]",
+            2,
+        ),
+        (
+            "[paper2.pdf, Page 2] [sample.pdf, Page 4]",
+            2,
+        ),
+        (
+            "[paper2.pdf, Page 1] "
+            "[paper2.pdf, Page 2] "
+            "[sample.pdf, Page 4]",
             3,
         ),
     ],
 )
-def test_valid_compound_citations(citation, expected_count):
+def test_valid_separate_citations(citations, expected_count):
     answer = (
-        "The retrieved studies identify several research challenges "
-        f"and deployment limitations {citation}."
+        "The retrieved studies identify research challenges "
+        f"and deployment limitations {citations}."
     )
 
     result = validate_answer_citations(answer, SOURCES)
@@ -41,10 +49,10 @@ def test_valid_compound_citations(citation, expected_count):
     assert result["malformed_citations"] == []
 
 
-def test_invalid_page_inside_compound_citation():
+def test_invalid_page_in_separate_citations():
     answer = (
-        "The studies identify several research challenges and "
-        "deployment limitations [paper2.pdf, Page 1, Page 99]."
+        "The studies identify deployment limitations "
+        "[paper2.pdf, Page 1] [paper2.pdf, Page 99]."
     )
 
     result = validate_answer_citations(answer, SOURCES)
@@ -55,16 +63,16 @@ def test_invalid_page_inside_compound_citation():
     assert result["invalid_citations"][0]["page"] == 99
 
 
-def test_invalid_document_inside_compound_citation():
+def test_invalid_document_in_separate_citations():
     answer = (
-        "The studies identify several research challenges and "
-        "deployment limitations "
-        "[paper2.pdf, Page 2; unknown.pdf, Page 4]."
+        "The studies identify deployment limitations "
+        "[paper2.pdf, Page 2] [unknown.pdf, Page 4]."
     )
 
     result = validate_answer_citations(answer, SOURCES)
 
     assert result["status"] == "invalid_citations"
+    assert result["checked_citation_count"] == 2
     assert result["valid_citation_count"] == 1
     assert result["invalid_citations"][0]["document"] == "unknown.pdf"
 
@@ -75,12 +83,14 @@ def test_invalid_document_inside_compound_citation():
         "[paper2.pdf, Page X]",
         "[paper2.pdf, Page 2; sample.pdf, Page X]",
         "[paper2.pdf, Page 2, Page X]",
+        "[paper2.pdf, Page 1, Page 2]",
+        "[paper2.pdf, Page 2; sample.pdf, Page 4]",
     ],
 )
 def test_malformed_compound_citations(citation):
     answer = (
-        "The studies identify several research challenges and "
-        f"deployment limitations {citation}."
+        "The studies identify research challenges "
+        f"and deployment limitations {citation}."
     )
 
     result = validate_answer_citations(answer, SOURCES)

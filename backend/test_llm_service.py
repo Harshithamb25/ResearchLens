@@ -1,7 +1,12 @@
-from backend.generation.llm_service import generate_answer
+
+from types import SimpleNamespace
+
+import backend.generation.llm_service as llm_service
 
 
 def test_generate_answer_uses_grounded_evidence(monkeypatch):
+    """Verify that the answer uses the supplied source passage."""
+
     question = "What datasets are discussed in the research paper?"
 
     evidence = [
@@ -17,36 +22,50 @@ def test_generate_answer_uses_grounded_evidence(monkeypatch):
         }
     ]
 
-    captured_prompt = {}
+    captured = {}
 
-    class MockResponse:
-        text = "The paper discusses malware and network intrusion detection datasets."
+    def mock_generate_content(*, model, contents, **kwargs):
+        captured["model"] = model
+        captured["prompt"] = contents
 
-    def mock_generate_content(*, model, contents):
-        captured_prompt["model"] = model
-        captured_prompt["contents"] = contents
-        return MockResponse()
+        return SimpleNamespace(
+            text=(
+                "The paper discusses malware classification "
+                "and network intrusion detection datasets "
+                "[sample.pdf, Page 9]."
+            )
+        )
 
+    # Mock the lazy Gemini client without making a real API call.
     monkeypatch.setattr(
-        "backend.generation.llm_service.client.models.generate_content",
-        mock_generate_content
+        llm_service,
+        "_get_client",
+        lambda: SimpleNamespace(
+            models=SimpleNamespace(
+                generate_content=mock_generate_content
+            )
+        ),
     )
 
-    answer = generate_answer(
+    answer = llm_service.generate_answer(
         question,
-        evidence
+        evidence,
     )
 
-    assert answer == (
-        "The paper discusses malware and network intrusion detection datasets."
+    expected_answer = (
+        "The paper discusses malware classification "
+        "and network intrusion detection datasets "
+        "[sample.pdf, Page 9]."
     )
 
-    assert captured_prompt["model"]
+    assert answer == expected_answer
 
-    assert question in captured_prompt["contents"]
+    # Verify that the question and original passage reach the model.
+    assert captured["model"]
+    assert question in captured["prompt"]
+    assert "sample.pdf" in captured["prompt"]
+    assert '"page": 9' in captured["prompt"]
+    assert "malware classification" in captured["prompt"]
 
-    assert "sample.pdf" in captured_prompt["contents"]
-
-    assert "Page: 9" in captured_prompt["contents"]
-
-    assert "malware classification" in captured_prompt["contents"]
+    # Verify that the answer retains its source citation.
+    assert "[sample.pdf, Page 9]" in answer
