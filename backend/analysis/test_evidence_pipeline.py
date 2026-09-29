@@ -4,15 +4,16 @@ from types import SimpleNamespace
 import pytest
 
 from backend.analysis import evidence_pipeline
-from backend.analysis.evidence_pipeline import (
-    run_evidence_pipeline
-)
+from backend.analysis.evidence_pipeline import run_evidence_pipeline
 
 
 def test_real_evidence_pipeline(monkeypatch):
     """
     Test real retrieval and reranking with mocked
     Gemini-dependent operations.
+
+    This test requires indexed research papers in the
+    local vector database.
     """
     query = "What datasets are used for intrusion detection?"
 
@@ -26,7 +27,7 @@ def test_real_evidence_pipeline(monkeypatch):
                 "dataset": "KDDCup99 and NSL-KDD",
                 "method": "Intrusion detection classification",
                 "metric": "Accuracy",
-                "conditions": "Research dataset evaluation"
+                "conditions": "Research dataset evaluation",
             }
             for _ in evidence_texts
         ]
@@ -34,7 +35,7 @@ def test_real_evidence_pipeline(monkeypatch):
     monkeypatch.setattr(
         "backend.analysis.evidence_builder."
         "extract_evidence_context_batch",
-        mock_extract_evidence_context_batch
+        mock_extract_evidence_context_batch,
     )
 
     def mock_build_evidence_relationships(claim_group):
@@ -45,7 +46,7 @@ def test_real_evidence_pipeline(monkeypatch):
                 page=evidence.page,
                 relationship="SUPPORT",
                 explanation="The evidence supports the claim.",
-                evidence=evidence
+                evidence=evidence,
             )
             for evidence in claim_group["evidence"]
         ]
@@ -53,14 +54,14 @@ def test_real_evidence_pipeline(monkeypatch):
     monkeypatch.setattr(
         evidence_pipeline,
         "build_evidence_relationships",
-        mock_build_evidence_relationships
+        mock_build_evidence_relationships,
     )
 
     result = run_evidence_pipeline(
         question=query,
         retrieval_k=5,
         rerank_k=3,
-        claim_threshold=0.75
+        claim_threshold=0.75,
     )
 
     assert result["question"] == query
@@ -80,15 +81,14 @@ def test_real_evidence_pipeline(monkeypatch):
         assert evidence.conditions is not None
 
 
-
 def setup_mock_pipeline(monkeypatch, claim_groups):
     """
-    Mock the current source-aware retrieval pipeline.
+    Provide deterministic retrieval and evidence for
+    testing relationship-analysis and audit failures.
 
-    Keep retrieval, reranking, and evidence extraction
-    deterministic so these tests isolate audit failures.
+    These tests deliberately bypass evidence selection
+    because they test the audit stage, not passage ranking.
     """
-
     all_evidence = [
         item
         for group in claim_groups
@@ -107,13 +107,13 @@ def setup_mock_pipeline(monkeypatch, claim_groups):
             "chunk_id": index,
             "text": f"Mock passage from {paper}",
         }
-        for index, paper in enumerate(papers)
+        for index, paper in enumerate(papers, start=1)
     ]
 
     monkeypatch.setattr(
         evidence_pipeline,
         "search_across_papers",
-        lambda question, per_paper_k, expand_queries: {
+        lambda question, per_paper_k, expand_queries, **kwargs: {
             "mock": True
         },
     )
@@ -122,6 +122,14 @@ def setup_mock_pipeline(monkeypatch, claim_groups):
         evidence_pipeline,
         "format_retrieval_results",
         lambda results: candidates,
+    )
+
+    # The production pipeline now selects evidence by
+    # research aspect. Bypass that stage for audit tests.
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "_select_evidence",
+        lambda question, candidates, limit: candidates[:limit],
     )
 
     def mock_rerank(question, results, top_k):
@@ -151,8 +159,14 @@ def setup_mock_pipeline(monkeypatch, claim_groups):
         lambda evidence, threshold: claim_groups,
     )
 
-    # These tests exercise claim-audit failure handling,
-    # not Gemini-based cross-paper theme comparison.
+    # Theme discovery and comparison are separate
+    # concerns from the audit-failure tests.
+    monkeypatch.setattr(
+        evidence_pipeline,
+        "_discover_additional_themes",
+        lambda **kwargs: [],
+    )
+
     monkeypatch.setattr(
         evidence_pipeline,
         "compare_cross_paper_themes",
@@ -166,12 +180,12 @@ def make_group(claim, paper):
         page=1,
         chunk_id=1,
         evidence_text="Example evidence",
-        claim=claim
+        claim=claim,
     )
 
     return {
         "claim": claim,
-        "evidence": [evidence]
+        "evidence": [evidence],
     }
 
 
@@ -184,17 +198,21 @@ def make_relationship(group):
         page=evidence.page,
         relationship="SUPPORT",
         explanation="The passage supports the claim.",
-        evidence=evidence
+        evidence=evidence,
     )
 
 
 def test_partial_analysis_failure(monkeypatch):
+    """
+    One successful claim group and one failed group
+    should produce a partial analysis status.
+    """
     first = make_group("Claim A", "paperA.pdf")
     second = make_group("Claim B", "paperB.pdf")
 
     setup_mock_pipeline(
         monkeypatch,
-        [first, second]
+        [first, second],
     )
 
     def mock_analyzer(group):
@@ -206,7 +224,7 @@ def test_partial_analysis_failure(monkeypatch):
     monkeypatch.setattr(
         evidence_pipeline,
         "build_evidence_relationships",
-        mock_analyzer
+        mock_analyzer,
     )
 
     result = run_evidence_pipeline("Compare the claims")
@@ -223,13 +241,20 @@ def test_partial_analysis_failure(monkeypatch):
     assert failed_audit.evidence_coverage == 0.0
     assert failed_audit.unanalyzed_evidence == 1
 
-    assert result["analysis_failures"][0]["claim"] == "Claim B"
+    assert (
+        result["analysis_failures"][0]["claim"]
+        == "Claim B"
+    )
 
 
 def test_complete_analysis_failure(monkeypatch):
+    """
+    If every claim group fails relationship analysis,
+    the overall analysis status should be failed.
+    """
     groups = [
         make_group("Claim A", "paperA.pdf"),
-        make_group("Claim B", "paperB.pdf")
+        make_group("Claim B", "paperB.pdf"),
     ]
 
     setup_mock_pipeline(monkeypatch, groups)
@@ -240,7 +265,7 @@ def test_complete_analysis_failure(monkeypatch):
     monkeypatch.setattr(
         evidence_pipeline,
         "build_evidence_relationships",
-        failing_analyzer
+        failing_analyzer,
     )
 
     result = run_evidence_pipeline("Analyze both claims")
@@ -248,6 +273,7 @@ def test_complete_analysis_failure(monkeypatch):
     assert result["status"] == "failed"
     assert result["relationships"] == []
     assert len(result["analysis_failures"]) == 2
+    assert len(result["audits"]) == 2
 
     for audit in result["audits"]:
         assert audit.analyzed_evidence == 0
@@ -255,8 +281,11 @@ def test_complete_analysis_failure(monkeypatch):
         assert audit.unanalyzed_evidence == 1
 
 
-
 def test_incomplete_relationship_results(monkeypatch):
+    """
+    A relationship response covering fewer evidence
+    items than supplied must not pass the audit.
+    """
     group = {
         "claim": "Claim A",
         "evidence": [
@@ -314,19 +343,24 @@ def test_additional_evidence_discovers_cross_paper_theme(
     A shared theme may be discovered from additional
     candidates even when the main evidence has none.
     """
-
     initial_evidence = [
         SimpleNamespace(
             paper="sample.pdf",
             page=10,
             chunk_id=1,
-            claim="Dataset construction suffers from class imbalance.",
+            claim=(
+                "Dataset construction suffers "
+                "from class imbalance."
+            ),
         ),
         SimpleNamespace(
             paper="paper2.pdf",
             page=2,
             chunk_id=2,
-            claim="Intrusion detection suffers from false positives.",
+            claim=(
+                "Intrusion detection suffers "
+                "from false positives."
+            ),
         ),
     ]
 
@@ -335,7 +369,10 @@ def test_additional_evidence_discovers_cross_paper_theme(
             paper="paper2.pdf",
             page=8,
             chunk_id=3,
-            claim="Limited dataset quality affects generalizability.",
+            claim=(
+                "Limited dataset quality "
+                "affects generalizability."
+            ),
         ),
     ]
 

@@ -53,11 +53,12 @@ def test_process_query_orchestrates_evidence_pipeline(
     )
 
     def mock_evidence_pipeline(
-        question,
-        retrieval_k,
-        rerank_k,
-        claim_threshold
-    ):
+    question,
+    retrieval_k,
+    rerank_k,
+    claim_threshold,
+    project_id=None,
+):
         has_evidence = status != "no_evidence"
 
         return {
