@@ -31,7 +31,7 @@ def _analysis_message(status, cross_paper_evidence):
 
 
 def _comparison_source_context(evidence_result, main_context):
-    """Include original passages used by thematic comparisons, including discovery-only ones."""
+    """Include original passages used by thematic comparisons."""
     comparisons = evidence_result.get("theme_comparisons") or []
     themes = evidence_result.get("themes") or []
     main_keys = {
@@ -63,21 +63,27 @@ def _comparison_source_context(evidence_result, main_context):
     return extra
 
 
-def process_query(question, retrieval_k=10, rerank_k=5, claim_threshold=0.75):
+def process_query(
+    question,
+    retrieval_k=10,
+    rerank_k=5,
+    claim_threshold=0.75,
+    project_id=None,
+):
+    """Process a research query; project API always supplies project_id."""
     if not question or not question.strip():
         raise ValueError("Question must not be empty.")
-
     query_type = classify_query(question)
     evidence_result = run_evidence_pipeline(
         question=question,
         retrieval_k=retrieval_k,
         rerank_k=rerank_k,
         claim_threshold=claim_threshold,
+        project_id=project_id,
     )
     analysis_status = evidence_result["status"]
     answer = None
     citation_validation = None
-
     if evidence_result["evidence"]:
         answer_context = evidence_to_answer_context(evidence_result["evidence"])
         comparisons = evidence_result.get("theme_comparisons") or []
@@ -95,7 +101,6 @@ def process_query(question, retrieval_k=10, rerank_k=5, claim_threshold=0.75):
             answer = generate_answer(question, answer_context)
         if answer is not None:
             citation_validation = validate_answer_citations(answer, answer_context)
-
     return {
         "question": question,
         "query_type": query_type,

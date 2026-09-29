@@ -7,10 +7,13 @@ with automatic indexing for the research paper library.
 """
 
 import logging
+from backend.workspace.history import router as history_router
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
 from typing import Any
+from backend.workspace.database import initialize_database
+from backend.workspace.projects import router as projects_router
 
 import pymupdf
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -42,7 +45,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-
+initialize_database()
+app.include_router(projects_router)
+app.include_router(history_router)
 # ---------------------------------------------------------
 # CORS configuration
 # ---------------------------------------------------------

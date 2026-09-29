@@ -1,19 +1,21 @@
 
-"""
-Source-grounded relationship analysis for ResearchLens.
+"""Source-grounded relationship analysis for ResearchLens.
 
-Classifies evidence against a claim and validates that
-every classification maps to its original evidence item.
+Classifies evidence against a claim and validates that every
+classification maps to its original evidence item.
 """
 
 import json
+import logging
 import time
 
 from google.genai import types
 
-from backend.generation.llm_service import client, MODEL_NAME
+from backend.generation.llm_service import _get_client, MODEL_NAME
 from backend.analysis.cross_paper_analysis import EvidenceRelationship
 
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_RELATIONSHIPS = {
     "SUPPORT",
@@ -25,7 +27,6 @@ ALLOWED_RELATIONSHIPS = {
 
 def _parse_response(response):
     """Parse JSON without silently accepting empty output."""
-
     raw_text = response.text
 
     if not raw_text or not raw_text.strip():
@@ -35,7 +36,6 @@ def _parse_response(response):
 
     raw_text = raw_text.strip()
 
-    # Defensive handling if a model returns Markdown fences.
     if raw_text.startswith("```"):
         lines = raw_text.splitlines()
 
@@ -52,7 +52,6 @@ def _parse_response(response):
 
 def _validate_relationships(result, evidence_count):
     """Reject missing, invented or duplicate evidence IDs."""
-
     if not isinstance(result, dict):
         raise ValueError("Expected a JSON object.")
 
@@ -87,7 +86,9 @@ def _validate_relationships(result, evidence_count):
         seen_ids.add(evidence_id)
 
         if item.get("relationship") not in ALLOWED_RELATIONSHIPS:
-            raise ValueError("Invalid relationship category.")
+            raise ValueError(
+                "Invalid relationship category."
+            )
 
         explanation = item.get("explanation")
 
@@ -108,10 +109,7 @@ def _validate_relationships(result, evidence_count):
 
 
 def analyze_evidence_relationships(claim_group):
-    """
-    Classify each evidence item against the group's claim.
-    """
-
+    """Classify each evidence item against the group's claim."""
     claim = claim_group["claim"]
     evidence_items = claim_group["evidence"]
 
@@ -179,10 +177,9 @@ Rules:
 - Use only the supplied source passages.
 - Do not invent research findings or missing context.
 - A shared topic alone does not establish agreement.
-- Different numerical results are not automatically
-  contradictions.
-- A passage containing the same extracted claim can
-  support that claim if the original text substantiates it.
+- Different numerical results are not automatically contradictions.
+- A passage containing the same extracted claim can support
+  that claim if the original text substantiates it.
 - Preserve every Evidence ID exactly.
 - Return one classification per Evidence ID.
 - Give a concise, source-grounded explanation.
@@ -207,7 +204,8 @@ Expected evidence count: {len(evidence_items)}
 
     for attempt in range(max_attempts):
         try:
-            response = client.models.generate_content(
+            # Resolve the initialized client at request time.
+            response = _get_client().models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -224,26 +222,27 @@ Expected evidence count: {len(evidence_items)}
             )
 
         except Exception as error:
+            logger.exception(
+                "Relationship analysis attempt %s/%s failed",
+                attempt + 1,
+                max_attempts,
+            )
+
             if attempt == max_attempts - 1:
                 raise
 
             wait_time = 2 ** attempt
 
-            print(
-                "Relationship analysis failed "
-                f"({type(error).__name__}). "
-                f"Retrying in {wait_time} seconds..."
+            logger.warning(
+                "Retrying relationship analysis in %s seconds",
+                wait_time,
             )
 
             time.sleep(wait_time)
 
 
 def build_evidence_relationships(claim_group):
-    """
-    Link validated classifications to their exact
-    original Evidence objects.
-    """
-
+    """Link classifications to their original Evidence objects."""
     analyzed = analyze_evidence_relationships(
         claim_group
     )

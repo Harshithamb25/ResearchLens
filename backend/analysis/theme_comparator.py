@@ -2,9 +2,9 @@
 """
 ResearchLens: evidence-grounded thematic comparisons.
 
-Compares findings from different papers discussing a shared
-research theme. The comparison is distinct from claim-level
-support, qualification and contradiction analysis.
+Compares findings from different papers discussing a
+shared research topic. Thematic overlap does not imply
+agreement, contradiction or independent corroboration.
 """
 
 import json
@@ -15,12 +15,11 @@ from typing import Any
 
 from google.genai import types
 
-from backend.generation.llm_service import (
-    client,
-    MODEL_NAME,
-)
+from backend.generation.llm_service import client, MODEL_NAME
 
 logger = logging.getLogger(__name__)
+
+MAX_FINDINGS_PER_PAPER = 4
 
 ALLOWED_RELATIONSHIPS = {
     "COMMON_CONCERN",
@@ -33,12 +32,15 @@ ALLOWED_RELATIONSHIPS = {
 RELATIONSHIP_LABELS = {
     "COMMON_CONCERN": "Common research concern",
     "COMPLEMENTARY_FINDINGS": "Complementary findings",
-    "PROBLEM_AND_PROPOSED_SOLUTION":
-        "Problem and proposed solution",
-    "RELATED_FINDINGS":
-        "Related findings; agreement not established",
-    "INSUFFICIENT_EVIDENCE":
-        "Insufficient evidence for comparison",
+    "PROBLEM_AND_PROPOSED_SOLUTION": (
+        "Problem and proposed solution"
+    ),
+    "RELATED_FINDINGS": (
+        "Related findings; agreement not established"
+    ),
+    "INSUFFICIENT_EVIDENCE": (
+        "Insufficient evidence for comparison"
+    ),
 }
 
 
@@ -58,14 +60,29 @@ def _source_groups(
     theme: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
     by_paper = defaultdict(list)
+    seen = set()
 
     for item in theme.get("evidence", []):
-        if item.paper and item.claim:
-            by_paper[item.paper].append(
-                _finding(item)
-            )
+        if not item.paper or not item.claim:
+            continue
 
-    return dict(sorted(by_paper.items()))
+        key = (
+            item.paper,
+            item.page,
+            item.chunk_id,
+            item.claim,
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        by_paper[item.paper].append(_finding(item))
+
+    return {
+        paper: findings[:MAX_FINDINGS_PER_PAPER]
+        for paper, findings in sorted(by_paper.items())
+    }
 
 
 def _fallback(
@@ -74,46 +91,47 @@ def _fallback(
 ) -> dict[str, Any]:
     papers = sorted(by_paper)
 
+    source_summaries = [
+        {
+            "paper": paper,
+            "findings": findings,
+        }
+        for paper, findings in by_paper.items()
+    ]
+
     return {
         "theme_id": theme["theme_id"],
         "theme": theme["theme"],
         "relationship": "RELATED_FINDINGS",
         "relationship_label": (
-            "Related findings; agreement not established"
+            RELATIONSHIP_LABELS["RELATED_FINDINGS"]
         ),
         "explanation": (
-            f"The papers {', '.join(papers)} address "
-            f"the shared topic '{theme['theme']}'. "
-            "Their findings may involve different "
-            "methods, conditions or research objectives. "
-            "The available evidence does not establish "
-            "method-specific agreement or contradiction."
+            f"Findings from {len(papers)} papers concern "
+            f"{theme['theme'].lower()}. "
+            "Their methods, observations or research "
+            "objectives may differ. The available "
+            "evidence does not establish agreement "
+            "or contradiction."
         ),
-        "shared_concern": None,
+        "shared_concern": theme["theme"],
         "important_differences": [],
         "limitations": [
-            "Thematic overlap alone does not establish "
-            "agreement or independent corroboration."
+            "This is a topic-level comparison. "
+            "Inspect the source passages before "
+            "drawing method-specific conclusions."
         ],
         "source_count": len(by_paper),
         "papers": papers,
-        "source_summaries": [
-            {
-                "paper": paper,
-                "findings": findings,
-            }
-            for paper, findings in by_paper.items()
-        ],
+        "source_summaries": source_summaries,
         "findings": [
             finding
-            for findings in by_paper.values()
-            for finding in findings
+            for summary in source_summaries
+            for finding in summary["findings"]
         ],
         "agreement_established": False,
         "conflict_established": False,
-        "analysis_method": (
-            "Conservative thematic comparison"
-        ),
+        "analysis_method": "Conservative thematic comparison",
     }
 
 
@@ -144,85 +162,89 @@ def _model_payload(
 def _analyze_with_gemini(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    prompt = """
-You are ResearchLens's evidence-grounded thematic
-comparison analyst.
+    instructions = """
+You are the ResearchLens thematic comparison analyst.
 
-Compare the supplied findings ONLY. They were extracted
-from research-paper passages.
+Compare findings from research papers using ONLY the
+supplied evidence.
 
-Your task is to explain how the findings relate within
-the given theme, not to invent agreement or contradiction.
+Your explanation must be concise, specific and written
+in your own words. Do not copy entire source sentences.
 
-Allowed relationship categories:
+Allowed relationships:
 
 COMMON_CONCERN:
 Different papers explicitly identify the same broad
-research concern, potentially for different methods.
-This does NOT establish agreement on a method-specific claim.
+research concern. This does not prove agreement on
+a method-specific claim.
 
 COMPLEMENTARY_FINDINGS:
-The papers provide distinct but compatible findings
-that illuminate different aspects of the same topic.
+Different papers provide distinct findings that
+illuminate different aspects of a shared topic.
 
 PROBLEM_AND_PROPOSED_SOLUTION:
 One paper identifies a problem while another proposes
 an approach intended to address that type of problem.
-A proposed solution is NOT proof of successful resolution.
+Do not claim that the solution is experimentally proven
+unless the supplied findings establish that.
 
 RELATED_FINDINGS:
-The findings share a theme, but their precise relationship
-is not established by the supplied evidence.
+The papers discuss a related topic, but a more specific
+relationship is not established.
 
 INSUFFICIENT_EVIDENCE:
-The extracted findings do not permit a meaningful
-comparison beyond superficial thematic overlap.
+The supplied findings do not permit a meaningful
+comparison.
 
-Rules:
-1. Use only the supplied findings.
-2. Do not invent experiments, performance values,
-   datasets, methods, results or citations.
-3. Distinguish observed limitations, literature-survey
-   statements and proposed solutions.
-4. Do not imply that a proposed framework has been
-   experimentally validated unless the supplied finding
-   explicitly reports validation.
-5. Different methods discussing the same problem are
-   not necessarily independent corroboration.
-6. Do not declare direct agreement or contradiction.
-7. Reference only source IDs present in the input.
-8. Keep the explanation concise and specific.
-9. If evidence is ambiguous, choose RELATED_FINDINGS
-   or INSUFFICIENT_EVIDENCE.
+Strict requirements:
+
+1. Compare the paper's own findings where possible.
+2. If a finding describes another study, do not
+   attribute that study's result to the current paper.
+3. Never invent methods, datasets, measurements,
+   experimental results, advantages or limitations.
+4. Do not convert detection range, journey time,
+   cost or other measurements into accuracy.
+5. Do not infer agreement from thematic overlap.
+6. Distinguish proposed methods from evaluated results.
+7. Use only source IDs provided in the input.
+8. Support the explanation with findings from at least
+   two different papers.
+9. Write two or three concise explanatory sentences.
+10. Express differences and qualifications in your
+    own words, retaining exact technical terms and
+    numerical measurements where necessary.
+11. If the evidence is ambiguous, select
+    RELATED_FINDINGS or INSUFFICIENT_EVIDENCE.
 
 Return one JSON object with EXACTLY these fields:
+
 {
-  "relationship": "one allowed category",
-  "explanation": "two or three grounded sentences",
-  "shared_concern": "brief description or null",
+  "relationship": "one allowed relationship",
+  "explanation": "two or three concise sentences",
+  "shared_concern": "short description or null",
   "important_differences": [
-    "one grounded difference"
+    "a concise evidence-grounded difference"
   ],
   "limitations": [
-    "one important qualification"
+    "a concise qualification"
   ],
   "source_ids": ["S1", "S2"]
 }
 
-The source_ids must identify the findings used to
-support the explanation and must include findings
-from at least two different papers.
-
 INPUT:
-""" + json.dumps(
-        payload,
-        ensure_ascii=False,
-        indent=2,
-    )
+"""
 
     response = client.models.generate_content(
         model=MODEL_NAME,
-        contents=prompt,
+        contents=(
+            instructions
+            + json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+            )
+        ),
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0,
@@ -295,14 +317,11 @@ def _validate_analysis(
 
     if len(represented_papers) < 2:
         raise ValueError(
-            "Theme comparison must cite at least "
+            "Comparison must reference at least "
             "two different papers."
         )
 
-    differences = analysis.get(
-        "important_differences"
-    )
-
+    differences = analysis.get("important_differences")
     limitations = analysis.get("limitations")
 
     if not isinstance(differences, list):
@@ -325,9 +344,7 @@ def _validate_analysis(
                 "Invalid comparison detail."
             )
 
-    shared_concern = analysis.get(
-        "shared_concern"
-    )
+    shared_concern = analysis.get("shared_concern")
 
     if (
         shared_concern is not None
@@ -346,12 +363,18 @@ def _validate_analysis(
             RELATIONSHIP_LABELS[relationship]
         ),
         "explanation": explanation.strip(),
-        "shared_concern": shared_concern,
-        "important_differences": differences,
-        "limitations": limitations,
-        "source_ids": list(
-            dict.fromkeys(source_ids)
+        "shared_concern": (
+            shared_concern.strip()
+            if isinstance(shared_concern, str)
+            else None
         ),
+        "important_differences": [
+            item.strip() for item in differences
+        ],
+        "limitations": [
+            item.strip() for item in limitations
+        ],
+        "source_ids": list(dict.fromkeys(source_ids)),
     }
 
 
@@ -360,11 +383,10 @@ def compare_cross_paper_themes(
     use_llm: bool = True,
 ) -> list[dict[str, Any]]:
     """
-    Compare each theme represented by at least two papers.
+    Compare themes supported by at least two papers.
 
-    Invalid model responses or API failures produce a
-    conservative fallback. They do not fail the
-    existing claim-level audit.
+    API failures return conservative topic-level
+    comparisons without claiming agreement.
     """
     comparisons = []
 
@@ -377,22 +399,14 @@ def compare_cross_paper_themes(
         if len(by_paper) < 2:
             continue
 
-        comparison = _fallback(
-            theme,
-            by_paper,
-        )
+        comparison = _fallback(theme, by_paper)
 
         if use_llm:
-            payload = _model_payload(
-                theme,
-                by_paper,
-            )
+            payload = _model_payload(theme, by_paper)
 
             for attempt in range(2):
                 try:
-                    analysis = _analyze_with_gemini(
-                        payload
-                    )
+                    analysis = _analyze_with_gemini(payload)
 
                     validated = _validate_analysis(
                         analysis,
@@ -402,16 +416,15 @@ def compare_cross_paper_themes(
                     comparison.update(validated)
 
                     comparison["analysis_method"] = (
-                        "Gemini-assisted thematic "
-                        "comparison"
+                        "Gemini-assisted thematic comparison"
                     )
 
                     break
 
                 except Exception as error:
                     logger.warning(
-                        "Theme comparison failed for "
-                        "%s (attempt %s): %s",
+                        "Theme comparison failed for %s "
+                        "(attempt %s): %s",
                         theme["theme_id"],
                         attempt + 1,
                         error,

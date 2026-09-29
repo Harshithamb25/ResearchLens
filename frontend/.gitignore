@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Private and locally uploaded documents
+/data/papers/*.pdf
+/data/projects/
+/data/documents/
+
+# Local application databases
+/chroma_db/
+/data/*.db
+/data/*.db-*

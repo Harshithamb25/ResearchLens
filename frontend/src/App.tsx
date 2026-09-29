@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useRef,
@@ -5,15 +6,16 @@ import {
   type FormEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import PaperLibrary from "./PaperLibrary";
 import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleHelp,
+  ExternalLink,
   FileSearch,
   GitCompareArrows,
   History,
@@ -24,6 +26,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -31,6 +34,19 @@ import {
   Sun,
   X,
 } from "lucide-react";
+
+import ProjectWorkspace from "./ProjectWorkspace";
+import ResearchHistory from "./ResearchHistory";
+import type { SavedResearchSession } from "./api/history";
+
+import {
+  getProjects,
+  getProjectPapers,
+  getProjectPaperUrl,
+  type ProjectPaper,
+  type ResearchProject,
+} from "./api/projects";
+
 import {
   analyzeResearch,
   type AnalysisStatus,
@@ -39,16 +55,29 @@ import {
   type ResearchTheme,
   type ThemeComparison,
 } from "./api/research";
+
 import "./App.css";
 import "./ResultView.css";
+import "./Workbench.css";
+
+/* ============================================================
+   TYPES AND CONSTANTS
+   ============================================================ */
 
 type Theme = "light" | "dark";
 type View = "research" | "library" | "history";
+type ResultTab = "synthesis" | "themes" | "evidence";
+type InspectorTab = "overview" | "evidence" | "comparisons";
+
+interface PaperLookup {
+  projectId: string;
+  papers: ProjectPaper[];
+}
 
 const examples = [
-  "What limitations and challenges affect AI-based intrusion detection systems?",
-  "Compare the methods and datasets used.",
-  "What do the papers agree on regarding intrusion detection limitations?",
+  "What limitations and challenges do the papers identify?",
+  "Compare the methods and datasets used across these papers.",
+  "Where do the papers agree or disagree?",
 ];
 
 const statusLabels: Record<AnalysisStatus, string> = {
@@ -58,22 +87,19 @@ const statusLabels: Record<AnalysisStatus, string> = {
   no_evidence: "No analyzable evidence",
 };
 
-function evidenceLabel(
-  item: EvidenceItem,
-  index: number
-): string {
-  return `Evidence ${item.evidence_id ?? index + 1}`;
-}
+/* ============================================================
+   EVIDENCE AND CITATION HELPERS
+   ============================================================ */
 
 function evidenceSource(item: EvidenceItem): string {
   return String(
-    item.paper_title ?? item.paper ?? "Source not specified"
+    item.paper_title ??
+      item.paper ??
+      "Source not specified"
   );
 }
 
-function evidencePage(
-  item: EvidenceItem
-): string | null {
+function evidencePage(item: EvidenceItem): string | null {
   return item.page == null
     ? null
     : `Page ${item.page}`;
@@ -83,8 +109,15 @@ function evidenceText(item: EvidenceItem): string {
   return String(
     item.evidence_text ??
       item.text ??
-      "Original passage text was not included in this finding."
+      "Original passage text was not included."
   );
+}
+
+function evidenceLabel(
+  item: EvidenceItem,
+  index: number
+): string {
+  return `Evidence ${item.evidence_id ?? index + 1}`;
 }
 
 function evidenceMatches(
@@ -101,7 +134,8 @@ function evidenceMatches(
 
   if (
     left.paper !== right.paper ||
-    String(left.page ?? "") !== String(right.page ?? "")
+    String(left.page ?? "") !==
+      String(right.page ?? "")
   ) {
     return false;
   }
@@ -114,32 +148,153 @@ function evidenceMatches(
     return true;
   }
 
+  return evidenceText(left) === evidenceText(right);
+}
+
+function normalizeFilename(value: string): string {
   return (
-    evidenceText(left) === evidenceText(right)
+    value
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop()
+      ?.trim()
+      .toLowerCase() ?? ""
   );
 }
 
-/**
- * The backend numbers source IDs in the same order
- * as source_summaries: sorted paper names, followed
- * by each paper's findings.
- *
- * Convert S1/S2 references into readable citations.
+function validPage(value: unknown): number | null {
+  const page = Number(value);
+
+  return Number.isInteger(page) && page >= 1
+    ? page
+    : null;
+}
+
+function citationKey(
+  filename: string,
+  page: number
+): string {
+  return `${normalizeFilename(filename)}|${page}`;
+}
+
+function escapeMarkdownLinkLabel(value: string): string {
+  return value.replace(/([\\[\]])/g, "\\$1");
+}
+
+/*
+ * Only link citations when:
+ * 1. The paper belongs to the active project.
+ * 2. The cited page exists in retrieved evidence.
+ * 3. The backend has not flagged the citation as invalid.
  */
+function buildLinkedSynthesis(
+  answer: string,
+  evidence: EvidenceItem[],
+  papers: ProjectPaper[],
+  projectId: string,
+  invalidCitationTexts: string[]
+): string {
+  if (!answer || !projectId || papers.length === 0) {
+    return answer;
+  }
+
+  const supportedSources = new Set<string>();
+
+  for (const item of evidence) {
+    const page = validPage(item.page);
+
+    if (page === null) continue;
+
+    for (const name of [item.paper, item.paper_title]) {
+      if (typeof name === "string" && name.trim()) {
+        supportedSources.add(citationKey(name, page));
+      }
+    }
+  }
+
+  const invalidCitations = new Set(
+    invalidCitationTexts.map((value) =>
+      value.trim().toLowerCase()
+    )
+  );
+
+  const citationPattern =
+    /\[([^\]\r\n]+?\.pdf),\s*Page\s+(\d+)\]/gi;
+
+  const protectedPattern =
+    /(`[^`\n]*`|\[[^\]\n]*\]\([^)]+\))/g;
+
+  return answer
+    .split(protectedPattern)
+    .map((segment) => {
+      if (
+        segment.startsWith("`") ||
+        /^\[[^\]\n]*\]\([^)]+\)$/.test(segment)
+      ) {
+        return segment;
+      }
+
+      return segment.replace(
+        citationPattern,
+        (
+          citation,
+          filename: string,
+          pageText: string
+        ) => {
+          const page = validPage(pageText);
+
+          if (
+            page === null ||
+            invalidCitations.has(
+              citation.trim().toLowerCase()
+            ) ||
+            !supportedSources.has(
+              citationKey(filename, page)
+            )
+          ) {
+            return citation;
+          }
+
+          const paper = papers.find(
+            (candidate) =>
+              normalizeFilename(candidate.filename) ===
+              normalizeFilename(filename)
+          );
+
+          if (!paper) return citation;
+
+          const url =
+            getProjectPaperUrl(projectId, paper.id) +
+            `#page=${page}`;
+
+          const label = escapeMarkdownLinkLabel(
+            `${filename}, Page ${page}`
+          );
+
+          return `[${label}](${url})`;
+        }
+      );
+    })
+    .join("");
+}
+
+/* ============================================================
+   COMPARISON HELPERS
+   ============================================================ */
+
 function comparisonSources(
   comparison: ThemeComparison
 ): string[] {
-  const summaries = comparison.source_summaries ?? [];
+  return (comparison.source_summaries ?? []).flatMap(
+    (source) =>
+      source.findings.map((finding) => {
+        const page =
+          finding.page == null
+            ? ""
+            : `, Page ${finding.page}`;
 
-  return summaries.flatMap((source) =>
-    source.findings.map((finding) => {
-      const page =
-        finding.page == null
-          ? ""
-          : `, Page ${finding.page}`;
-
-      return `${source.paper}${page}`;
-    })
+        return `${source.paper}${page}`;
+      })
   );
 }
 
@@ -153,14 +308,16 @@ function readableComparisonText(
 
   return value.replace(
     /\bS(\d+)\b/g,
-    (match, number: string) => {
-      const index = Number(number) - 1;
-      return sources[index] ?? match;
-    }
+    (match, number: string) =>
+      sources[Number(number) - 1] ?? match
   );
 }
 
-function App() {
+/* ============================================================
+   APPLICATION
+   ============================================================ */
+
+export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem(
       "researchlens-theme"
@@ -178,32 +335,202 @@ function App() {
   });
 
   const [view, setView] = useState<View>("research");
-  const [question, setQuestion] = useState("");
-  const [submittedQuestion, setSubmittedQuestion] =
-    useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] =
     useState(true);
 
+  const [resultTab, setResultTab] =
+    useState<ResultTab>("synthesis");
+
+  const [inspectorTab, setInspectorTab] =
+    useState<InspectorTab>("overview");
+
+  const [projects, setProjects] =
+    useState<ResearchProject[]>([]);
+
+  const [projectsLoading, setProjectsLoading] =
+    useState(true);
+
+  const [projectsError, setProjectsError] =
+    useState<string | null>(null);
+
+  const [selectedProject, setSelectedProject] =
+    useState<ResearchProject | null>(null);
+
+  const [projectPapers, setProjectPapers] =
+    useState<PaperLookup>({
+      projectId: "",
+      papers: [],
+    });
+
+  const [papersLoading, setPapersLoading] =
+    useState(false);
+
+  const [papersError, setPapersError] =
+    useState<string | null>(null);
+
+  const [papersVersion, setPapersVersion] =
+    useState(0);
+
+  const [historyVersion, setHistoryVersion] =
+    useState(0);
+
+  const [question, setQuestion] = useState("");
+  const [submittedQuestion, setSubmittedQuestion] =
+    useState("");
+
   const [response, setResponse] =
     useState<QueryResponse | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] =
     useState<string | null>(null);
+
   const [selectedEvidence, setSelectedEvidence] =
     useState<EvidenceItem | null>(null);
-  const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
+
+  const [sourceDialogOpen, setSourceDialogOpen] =
+    useState(false);
 
   const requestController =
     useRef<AbortController | null>(null);
 
+  const activeProjectId = selectedProject?.id ?? null;
+
+  const result = response?.data;
+  const analysis = result?.result;
+  const evidence = analysis?.evidence ?? [];
+  const themes = analysis?.themes ?? [];
+  const comparisons =
+    analysis?.theme_comparisons ?? [];
+
+  const crossPaperThemes = themes.filter(
+    (item) => item.cross_paper
+  );
+
+  const singlePaperThemes = themes.filter(
+    (item) => !item.cross_paper
+  );
+
+  const citationValidation =
+    result?.citation_validation;
+
+  const sourceCount =
+    analysis?.source_count ??
+    new Set(
+      evidence.map((item) => evidenceSource(item))
+    ).size;
+
+  const invalidCitationTexts =
+    citationValidation?.invalid_citations.map(
+      (item) => item.citation
+    ) ?? [];
+
+  const linkedAnswer =
+    result?.answer &&
+    selectedProject &&
+    projectPapers.projectId === selectedProject.id
+      ? buildLinkedSynthesis(
+          result.answer,
+          evidence,
+          projectPapers.papers,
+          selectedProject.id,
+          invalidCitationTexts
+        )
+      : result?.answer ?? "";
+
+  /* --------------------------------------------------------
+     THEME
+     -------------------------------------------------------- */
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+
     localStorage.setItem(
       "researchlens-theme",
       theme
     );
   }, [theme]);
+
+  function toggleTheme() {
+    setTheme((current) =>
+      current === "dark" ? "light" : "dark"
+    );
+  }
+
+  /* --------------------------------------------------------
+     INITIAL PROJECT LOADING
+     -------------------------------------------------------- */
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    setProjectsLoading(true);
+
+    getProjects(controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+
+        setProjects(items);
+        setProjectsError(null);
+
+        setSelectedProject((current) =>
+          items.find(
+            (project) => project.id === current?.id
+          ) ??
+          items[0] ??
+          null
+        );
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+
+        setProjectsError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not load research projects."
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setProjectsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  async function refreshProjects(
+    preferredId?: string
+  ) {
+    try {
+      const items = await getProjects();
+
+      setProjects(items);
+      setProjectsError(null);
+
+      const next =
+        items.find(
+          (project) =>
+            project.id ===
+            (preferredId ?? selectedProject?.id)
+        ) ??
+        items[0] ??
+        null;
+
+      selectProject(next);
+    } catch (caught) {
+      setProjectsError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not refresh projects."
+      );
+    }
+  }
+
+  /* --------------------------------------------------------
+     CLEAN UP ACTIVE RESEARCH REQUESTS
+     -------------------------------------------------------- */
 
   useEffect(() => {
     return () => {
@@ -211,10 +538,183 @@ function App() {
     };
   }, []);
 
+  /* --------------------------------------------------------
+     LOAD ACTIVE PROJECT PDF REFERENCES
+     -------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!activeProjectId) {
+      setProjectPapers({
+        projectId: "",
+        papers: [],
+      });
+
+      setPapersLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    setPapersLoading(true);
+    setPapersError(null);
+
+    getProjectPapers(
+      activeProjectId,
+      controller.signal
+    )
+      .then((papers) => {
+        if (controller.signal.aborted) return;
+
+        setProjectPapers({
+          projectId: activeProjectId,
+          papers,
+        });
+
+        setPapersLoading(false);
+      })
+      .catch((caught: unknown) => {
+        if (controller.signal.aborted) return;
+
+        setPapersError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not load citation sources."
+        );
+
+        setPapersLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [activeProjectId, papersVersion]);
+
+  function refreshCitationPapers() {
+    setPapersLoading(true);
+    setPapersError(null);
+    setPapersVersion((value) => value + 1);
+  }
+
+  /* --------------------------------------------------------
+     ORIGINAL PDF LINKS
+     -------------------------------------------------------- */
+
+  function getEvidencePdfUrl(
+    item: EvidenceItem
+  ): string | null {
+    if (
+      !selectedProject ||
+      projectPapers.projectId !== selectedProject.id
+    ) {
+      return null;
+    }
+
+    const names = [
+      item.paper,
+      item.paper_title,
+    ].filter(
+      (value): value is string =>
+        typeof value === "string" &&
+        value.trim().length > 0
+    );
+
+    const paper = projectPapers.papers.find(
+      (candidate) =>
+        names.some(
+          (name) =>
+            normalizeFilename(candidate.filename) ===
+            normalizeFilename(name)
+        )
+    );
+
+    if (!paper) return null;
+
+    const url = getProjectPaperUrl(
+      selectedProject.id,
+      paper.id
+    );
+
+    const page = validPage(item.page);
+
+    return page === null
+      ? url
+      : `${url}#page=${page}`;
+  }
+
+  function PdfSourceLink({
+    item,
+    showUnavailable = false,
+  }: {
+    item: EvidenceItem;
+    showUnavailable?: boolean;
+  }) {
+    const url = getEvidencePdfUrl(item);
+
+    if (url) {
+      return (
+        <a
+          className="source-pdf-link"
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) =>
+            event.stopPropagation()
+          }
+        >
+          <ExternalLink size={15} />
+          Open original PDF
+          {evidencePage(item)
+            ? ` — ${evidencePage(item)}`
+            : ""}
+        </a>
+      );
+    }
+
+    if (!showUnavailable) return null;
+
+    return (
+      <div className="source-pdf-unavailable">
+        <p>
+          {papersLoading
+            ? "Loading PDF links..."
+            : papersError
+              ? papersError
+              : "Original PDF link unavailable."}
+        </p>
+
+        <button
+          type="button"
+          className="source-pdf-retry"
+          onClick={refreshCitationPapers}
+          disabled={papersLoading}
+        >
+          <RotateCcw size={14} />
+          Refresh PDF links
+        </button>
+      </div>
+    );
+  }
+
+  /* --------------------------------------------------------
+     RESEARCH ACTIONS
+     -------------------------------------------------------- */
+
   async function runResearch(value: string) {
     const trimmed = value.trim();
 
     if (!trimmed) return;
+
+    if (!selectedProject) {
+      setError(
+        "Select or create a research project first."
+      );
+      return;
+    }
+
+    if (selectedProject.document_count < 2) {
+      setError(
+        "Upload at least two indexed papers before researching."
+      );
+      return;
+    }
 
     requestController.current?.abort();
 
@@ -226,27 +726,36 @@ function App() {
     setResponse(null);
     setError(null);
     setSelectedEvidence(null);
+    setSourceDialogOpen(false);
+    setResultTab("synthesis");
+    setInspectorTab("overview");
     setLoading(true);
     setView("research");
     setSidebarOpen(false);
 
     try {
       const nextResponse = await analyzeResearch(
+        selectedProject.id,
         trimmed,
         controller.signal
       );
 
-      if (!controller.signal.aborted) {
-        setResponse(nextResponse);
-      }
+      if (controller.signal.aborted) return;
+
+      setResponse(nextResponse);
+      refreshCitationPapers();
+
+      setHistoryVersion(
+        (version) => version + 1
+      );
     } catch (caught) {
-      if (!controller.signal.aborted) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "An unexpected error occurred."
-        );
-      }
+      if (controller.signal.aborted) return;
+
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "An unexpected error occurred."
+      );
     } finally {
       if (!controller.signal.aborted) {
         setLoading(false);
@@ -272,34 +781,109 @@ function App() {
     setError(null);
     setLoading(false);
     setSelectedEvidence(null);
+    setSourceDialogOpen(false);
+    setResultTab("synthesis");
+    setInspectorTab("overview");
     setView("research");
     setSidebarOpen(false);
   }
 
-  const result = response?.data;
-  const analysis = result?.result;
+  function selectProject(
+    project: ResearchProject | null
+  ) {
+    if (project?.id !== selectedProject?.id) {
+      requestController.current?.abort();
+      requestController.current = null;
 
-  const evidence = analysis?.evidence ?? [];
-  const themes = analysis?.themes ?? [];
-  const comparisons =
-    analysis?.theme_comparisons ?? [];
+      setQuestion("");
+      setSubmittedQuestion("");
+      setResponse(null);
+      setError(null);
+      setLoading(false);
+      setSelectedEvidence(null);
+      setSourceDialogOpen(false);
+      setResultTab("synthesis");
+      setInspectorTab("overview");
 
-  const crossPaperThemes = themes.filter(
-    (item) => item.cross_paper
-  );
+      setProjectPapers({
+        projectId: "",
+        papers: [],
+      });
 
-  const singlePaperThemes = themes.filter(
-    (item) => !item.cross_paper
-  );
+      setPapersError(null);
+      setPapersLoading(Boolean(project));
+    }
 
-  const selectedItem = selectedEvidence;
+    setSelectedProject(project);
+  }
+
+  function reopenResearchSession(
+    session: SavedResearchSession
+  ) {
+    requestController.current?.abort();
+    requestController.current = null;
+
+    setSubmittedQuestion(session.question);
+    setQuestion(session.question);
+    setResponse(session.response);
+    setLoading(false);
+    setError(null);
+    setSelectedEvidence(null);
+    setSourceDialogOpen(false);
+    setResultTab("synthesis");
+    setInspectorTab("overview");
+    setView("research");
+    setSidebarOpen(false);
+
+    refreshCitationPapers();
+  }
 
   function inspectEvidence(item: EvidenceItem) {
     setSelectedEvidence(item);
     setInspectorOpen(true);
-    // The source dialog is always visible, even when the side inspector
-    // is outside the viewport or hidden by responsive layout.
+    setInspectorTab("evidence");
     setSourceDialogOpen(true);
+  }
+
+  /* --------------------------------------------------------
+     SHARED RESEARCH COMPONENTS
+     -------------------------------------------------------- */
+
+  function ResearchMarkdown({
+    content,
+  }: {
+    content: string;
+  }) {
+    return (
+      <div className="answer-text research-markdown">
+        <ReactMarkdown
+          components={{
+            a: ({ href, children }) => (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={
+                  href?.includes("/papers/") &&
+                  href?.includes("#page=")
+                    ? "synthesis-citation-link"
+                    : undefined
+                }
+                title={
+                  href?.includes("/papers/")
+                    ? "Open the cited PDF page"
+                    : undefined
+                }
+              >
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
+    );
   }
 
   function renderComparison(
@@ -307,11 +891,15 @@ function App() {
   ) {
     const differences =
       comparison.important_differences ?? [];
+
     const limitations =
       comparison.limitations ?? [];
 
     return (
-      <div className="theme-comparison">
+      <div
+        className="theme-comparison"
+        key={comparison.theme_id}
+      >
         <div className="comparison-heading">
           <GitCompareArrows size={17} />
           <span>Cross-paper comparison</span>
@@ -340,6 +928,7 @@ function App() {
         {comparison.shared_concern && (
           <div className="comparison-detail">
             <strong>Shared research concern</strong>
+
             <p>
               {readableComparisonText(
                 comparison.shared_concern,
@@ -352,15 +941,18 @@ function App() {
         {differences.length > 0 && (
           <div className="comparison-detail">
             <strong>Important differences</strong>
+
             <ul>
-              {differences.map((difference, index) => (
-                <li key={index}>
-                  {readableComparisonText(
-                    difference,
-                    comparison
-                  )}
-                </li>
-              ))}
+              {differences.map(
+                (difference, index) => (
+                  <li key={index}>
+                    {readableComparisonText(
+                      difference,
+                      comparison
+                    )}
+                  </li>
+                )
+              )}
             </ul>
           </div>
         )}
@@ -368,28 +960,32 @@ function App() {
         {limitations.length > 0 && (
           <div className="comparison-detail comparison-limitations">
             <strong>Interpretation limits</strong>
+
             <ul>
-              {limitations.map((limitation, index) => (
-                <li key={index}>
-                  {readableComparisonText(
-                    limitation,
-                    comparison
-                  )}
-                </li>
-              ))}
+              {limitations.map(
+                (limitation, index) => (
+                  <li key={index}>
+                    {readableComparisonText(
+                      limitation,
+                      comparison
+                    )}
+                  </li>
+                )
+              )}
             </ul>
           </div>
         )}
 
         <div className="comparison-footer">
           <ShieldCheck size={15} />
+
           <span>
             {comparison.agreement_established
               ? "Agreement reported by the comparison."
               : "Method-specific agreement has not been established."}
             {" "}
-            Inspect the original passages before
-            drawing a research conclusion.
+            Inspect original passages before
+            drawing a conclusion.
           </span>
         </div>
       </div>
@@ -414,6 +1010,7 @@ function App() {
         <div className="theme-card-header">
           <div>
             <h3>{themeItem.theme}</h3>
+
             <span className="theme-source-count">
               {themeItem.source_count} source
               {themeItem.source_count === 1
@@ -444,14 +1041,15 @@ function App() {
         </div>
 
         <div className="theme-findings">
-          {themeItem.evidence.map((item, index) => {
-            return (
+          {themeItem.evidence.map(
+            (item, index) => (
               <div
                 className="theme-finding"
                 key={`${themeItem.theme_id}-${index}`}
               >
                 <div className="theme-finding-source">
                   <BookOpen size={15} />
+
                   <strong>
                     {evidenceSource(item)}
                   </strong>
@@ -468,17 +1066,23 @@ function App() {
                     "No extracted claim available."}
                 </p>
 
-                <button
-                  className="theme-inspect-button"
-                  type="button"
-                  onClick={() => inspectEvidence(item)}
-                >
-                  Inspect source passage
-                  <ArrowRight size={15} />
-                </button>
+                <div className="source-actions">
+                  <button
+                    className="theme-inspect-button"
+                    type="button"
+                    onClick={() =>
+                      inspectEvidence(item)
+                    }
+                  >
+                    Inspect source passage
+                    <ArrowRight size={15} />
+                  </button>
+
+                  <PdfSourceLink item={item} />
+                </div>
               </div>
-            );
-          })}
+            )
+          )}
         </div>
 
         {themeItem.cross_paper &&
@@ -486,18 +1090,266 @@ function App() {
             <p className="theme-disclaimer">
               These findings address a shared
               research topic. A comparative
-              explanation was not available
-              for this theme.
+              explanation was not available.
             </p>
           )}
       </article>
     );
   }
 
+  function renderEvidenceCard(
+    item: EvidenceItem,
+    index: number
+  ) {
+    const selected =
+      selectedEvidence !== null &&
+      evidenceMatches(selectedEvidence, item);
+
+    return (
+      <article
+        className={`evidence-card ${
+          selected ? "selected" : ""
+        }`}
+        key={`${item.chunk_id ?? index}-${index}`}
+      >
+        <button
+          type="button"
+          className="evidence-card-inspect"
+          onClick={() =>
+            inspectEvidence(item)
+          }
+        >
+          <div className="evidence-card-top">
+            <span className="evidence-id">
+              {evidenceLabel(item, index)}
+            </span>
+
+            <ChevronRight size={17} />
+          </div>
+
+          <strong>
+            {evidenceSource(item)}
+          </strong>
+
+          {evidencePage(item) && (
+            <span className="evidence-page">
+              {evidencePage(item)}
+            </span>
+          )}
+
+          <p>{evidenceText(item)}</p>
+        </button>
+
+        <PdfSourceLink item={item} />
+      </article>
+    );
+  }
+
+  function renderCitationValidation() {
+    if (!citationValidation) {
+      return (
+        <div className="wb-inspector-card">
+          <strong>Citation validation</strong>
+          <p>
+            No citation validation report was
+            returned for this research session.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <section
+        className={`citation-panel citation-${citationValidation.status}`}
+        aria-label="Citation validation"
+      >
+        <div className="citation-panel-heading">
+          <ShieldCheck size={20} />
+
+          <div>
+            <strong>Citation validation</strong>
+
+            <span className="citation-status">
+              {citationValidation.status ===
+              "structurally_valid"
+                ? "Structurally valid"
+                : citationValidation.status ===
+                    "review_required"
+                  ? "Review required"
+                  : "Invalid citations detected"}
+            </span>
+          </div>
+        </div>
+
+        <p className="citation-count">
+          {citationValidation.valid_citation_count}
+          {" "}of{" "}
+          {citationValidation.checked_citation_count}
+          {" "}citations valid
+        </p>
+
+        <div className="citation-metrics">
+          <span>
+            {
+              citationValidation.invalid_citations
+                .length
+            }{" "}
+            invalid
+          </span>
+
+          <span>
+            {
+              citationValidation.malformed_citations
+                .length
+            }{" "}
+            malformed
+          </span>
+
+          <span>
+            {
+              citationValidation
+                .uncited_passage_warnings.length
+            }{" "}
+            uncited-passage warnings
+          </span>
+        </div>
+
+        {citationValidation.invalid_citations
+          .length > 0 && (
+          <details className="citation-issues">
+            <summary>
+              Invalid references
+              <ChevronDown size={15} />
+            </summary>
+
+            <ul>
+              {citationValidation.invalid_citations.map(
+                (item, index) => (
+                  <li key={index}>
+                    {item.citation}
+                  </li>
+                )
+              )}
+            </ul>
+          </details>
+        )}
+
+        {citationValidation.malformed_citations
+          .length > 0 && (
+          <details className="citation-issues">
+            <summary>
+              Malformed references
+              <ChevronDown size={15} />
+            </summary>
+
+            <ul>
+              {citationValidation.malformed_citations.map(
+                (item, index) => (
+                  <li key={index}>{item}</li>
+                )
+              )}
+            </ul>
+          </details>
+        )}
+
+        <p className="citation-note">
+          Structural validation checks document
+          and page references. It does not
+          establish that a cited passage supports
+          the associated claim.
+        </p>
+      </section>
+    );
+  }
+
+  function renderResearchQuestionForm(
+    compact = false
+  ) {
+    return (
+      <form
+        className={`question-form ${
+          compact ? "wb-compact-question" : ""
+        }`}
+        onSubmit={submitQuestion}
+      >
+        <label
+          className="sr-only"
+          htmlFor={
+            compact
+              ? "compact-research-question"
+              : "research-question"
+          }
+        >
+          Research question
+        </label>
+
+        <textarea
+          id={
+            compact
+              ? "compact-research-question"
+              : "research-question"
+          }
+          placeholder={
+            compact
+              ? "Ask another research question..."
+              : "What would you like to investigate?"
+          }
+          value={question}
+          onChange={(event) =>
+            setQuestion(event.target.value)
+          }
+          rows={compact ? 1 : 3}
+        />
+
+        <div className="form-bottom">
+          <span>
+            <BookOpen size={15} />
+
+            {selectedProject
+              ? `${selectedProject.document_count} papers · ${selectedProject.name}`
+              : "Select a research project"}
+          </span>
+
+          <button
+            className="submit-button"
+            type="submit"
+            disabled={
+              loading ||
+              !question.trim() ||
+              !selectedProject ||
+              selectedProject.document_count < 2
+            }
+            aria-label="Analyze research question"
+            title={
+              selectedProject &&
+              selectedProject.document_count < 2
+                ? "Upload at least two indexed papers"
+                : "Analyze research question"
+            }
+          >
+            {loading ? (
+              <LoaderCircle
+                size={18}
+                className="spinning"
+              />
+            ) : (
+              <ArrowRight size={19} />
+            )}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  /* ============================================================
+     APPLICATION LAYOUT
+     ============================================================ */
+
   return (
     <div className="app-shell">
       {sidebarOpen && (
         <button
+          type="button"
           className="mobile-overlay"
           aria-label="Close navigation"
           onClick={() =>
@@ -505,6 +1357,8 @@ function App() {
           }
         />
       )}
+
+      {/* SIDEBAR */}
 
       <aside
         className={`sidebar ${
@@ -525,6 +1379,7 @@ function App() {
           </div>
 
           <button
+            type="button"
             className="icon-button mobile-close"
             aria-label="Close navigation"
             onClick={() =>
@@ -536,6 +1391,7 @@ function App() {
         </div>
 
         <button
+          type="button"
           className="new-research"
           onClick={newResearch}
         >
@@ -552,10 +1408,9 @@ function App() {
           aria-label="Main navigation"
         >
           <button
+            type="button"
             className={`nav-item ${
-              view === "research"
-                ? "active"
-                : ""
+              view === "research" ? "active" : ""
             }`}
             onClick={() => {
               setView("research");
@@ -574,10 +1429,9 @@ function App() {
           </button>
 
           <button
+            type="button"
             className={`nav-item ${
-              view === "library"
-                ? "active"
-                : ""
+              view === "library" ? "active" : ""
             }`}
             onClick={() => {
               setView("library");
@@ -589,10 +1443,9 @@ function App() {
           </button>
 
           <button
+            type="button"
             className={`nav-item ${
-              view === "history"
-                ? "active"
-                : ""
+              view === "history" ? "active" : ""
             }`}
             onClick={() => {
               setView("history");
@@ -604,12 +1457,102 @@ function App() {
           </button>
         </nav>
 
+        {/* PROJECTS */}
+
+        <div className="wb-sidebar-projects">
+          <div className="wb-sidebar-projects-heading">
+            <span className="nav-heading">
+              PROJECTS
+            </span>
+
+            <button
+              type="button"
+              className="icon-button"
+              title="Create or manage projects"
+              aria-label="Manage projects"
+              onClick={() => {
+                setView("library");
+                setSidebarOpen(false);
+              }}
+            >
+              <Plus size={17} />
+            </button>
+          </div>
+
+          {projectsLoading ? (
+            <p className="wb-sidebar-message">
+              <LoaderCircle
+                size={15}
+                className="spinning"
+              />
+              Loading projects...
+            </p>
+          ) : projectsError ? (
+            <div className="wb-sidebar-message">
+              <AlertCircle size={15} />
+              <span>{projectsError}</span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void refreshProjects()
+                }
+              >
+                Retry
+              </button>
+            </div>
+          ) : projects.length === 0 ? (
+            <button
+              type="button"
+              className="wb-sidebar-empty"
+              onClick={() =>
+                setView("library")
+              }
+            >
+              <Plus size={16} />
+              Create your first project
+            </button>
+          ) : (
+            <div className="wb-project-list">
+              {projects.map((project) => (
+                <button
+                  type="button"
+                  key={project.id}
+                  className={`wb-project-item ${
+                    selectedProject?.id === project.id
+                      ? "active"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    selectProject(project);
+                    setView("research");
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <BookOpen size={16} />
+
+                  <span title={project.name}>
+                    {project.name}
+                  </span>
+
+                  {selectedProject?.id ===
+                    project.id && (
+                    <span className="wb-project-active-dot" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="sidebar-spacer" />
 
         <div className="sidebar-note">
           <ShieldCheck size={19} />
+
           <div>
             <strong>Evidence first</strong>
+
             <p>
               Inspect the sources behind
               every research conclusion.
@@ -619,14 +1562,9 @@ function App() {
 
         <div className="sidebar-footer">
           <button
+            type="button"
             className="nav-item"
-            onClick={() =>
-              setTheme(
-                theme === "dark"
-                  ? "light"
-                  : "dark"
-              )
-            }
+            onClick={toggleTheme}
           >
             {theme === "dark" ? (
               <Sun size={19} />
@@ -645,10 +1583,13 @@ function App() {
         </div>
       </aside>
 
+      {/* MAIN SHELL */}
+
       <div className="main-shell">
-        <header className="topbar">
+        <header className="topbar wb-topbar">
           <div className="topbar-left">
             <button
+              type="button"
               className="icon-button menu-button"
               aria-label="Open navigation"
               onClick={() =>
@@ -658,40 +1599,78 @@ function App() {
               <Menu size={21} />
             </button>
 
-            <div className="breadcrumb">
-              <span>Workspace</span>
-              <ChevronRight size={15} />
-              <strong>
-                {view === "research"
-                  ? "Research"
-                  : view === "library"
-                    ? "Paper library"
-                    : "Research history"}
-              </strong>
+            <div className="wb-topbar-project">
+              <span className="section-caption">
+                ACTIVE PROJECT
+              </span>
+
+              <select
+                className="wb-topbar-select"
+                aria-label="Active research project"
+                value={selectedProject?.id ?? ""}
+                onChange={(event) => {
+                  const next =
+                    projects.find(
+                      (project) =>
+                        project.id ===
+                        event.target.value
+                    ) ?? null;
+
+                  selectProject(next);
+                }}
+                disabled={
+                  projectsLoading ||
+                  projects.length === 0
+                }
+              >
+                {projects.length === 0 && (
+                  <option value="">
+                    No project selected
+                  </option>
+                )}
+
+                {projects.map((project) => (
+                  <option
+                    key={project.id}
+                    value={project.id}
+                  >
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+
+              <span className="wb-project-subtitle">
+                {selectedProject
+                  ? `${selectedProject.document_count} papers · Active`
+                  : "Create a project to begin"}
+              </span>
             </div>
           </div>
 
+
+
+<div className="wb-topbar-search">
+  {renderResearchQuestionForm(true)}
+</div>
           <div className="topbar-actions">
-            <span className="preview-badge">
-              <span className="preview-dot" />
-              Preview
-            </span>
+            <button
+              type="button"
+              className="icon-button"
+              title="Refresh projects"
+              aria-label="Refresh projects"
+              onClick={() =>
+                void refreshProjects()
+              }
+            >
+              <RefreshCw size={18} />
+            </button>
 
             <button
+              type="button"
               className="icon-button"
-              aria-label={`Switch to ${
-                theme === "dark"
-                  ? "light"
-                  : "dark"
-              } theme`}
               title="Toggle theme"
-              onClick={() =>
-                setTheme(
-                  theme === "dark"
-                    ? "light"
-                    : "dark"
-                )
-              }
+              aria-label="Toggle theme"
+              onClick={toggleTheme}
             >
               {theme === "dark" ? (
                 <Sun size={19} />
@@ -702,11 +1681,17 @@ function App() {
 
             {view === "research" && (
               <button
+                type="button"
                 className="icon-button inspector-toggle"
+                title={
+                  inspectorOpen
+                    ? "Hide evidence inspector"
+                    : "Show evidence inspector"
+                }
                 aria-label={
                   inspectorOpen
-                    ? "Hide evidence panel"
-                    : "Show evidence panel"
+                    ? "Hide evidence inspector"
+                    : "Show evidence inspector"
                 }
                 onClick={() =>
                   setInspectorOpen(
@@ -724,9 +1709,11 @@ function App() {
           </div>
         </header>
 
+        {/* RESEARCH PAGE */}
+
         {view === "research" ? (
           <div className="research-layout">
-            <main className="research-main">
+            <main className="research-main wb-research-main">
               {!submittedQuestion ? (
                 <div className="welcome">
                   <div className="eyebrow">
@@ -741,56 +1728,70 @@ function App() {
 
                   <p className="welcome-description">
                     Ask questions across your
-                    research papers. Explore
-                    the evidence, compare
-                    findings and see where
-                    uncertainty remains.
+                    research papers. Explore the
+                    evidence, compare findings
+                    and see where uncertainty
+                    remains.
                   </p>
 
-                  <form
-                    className="question-form"
-                    onSubmit={
-                      submitQuestion
-                    }
-                  >
-                    <label
-                      className="sr-only"
-                      htmlFor="research-question"
-                    >
-                      Research question
-                    </label>
 
-                    <textarea
-                      id="research-question"
-                      placeholder="What would you like to investigate?"
-                      value={question}
-                      onChange={(event) =>
-                        setQuestion(
-                          event.target.value
-                        )
-                      }
-                      rows={3}
-                    />
+                  {!selectedProject && (
+                    <div className="wb-setup-notice">
+                      <AlertCircle size={18} />
 
-                    <div className="form-bottom">
-                      <span>
-                        <BookOpen size={15} />
-                        Grounded in your
-                        paper collection
-                      </span>
+                      <div>
+                        <strong>
+                          Start with a research project
+                        </strong>
 
-                      <button
-                        className="submit-button"
-                        type="submit"
-                        disabled={
-                          !question.trim()
-                        }
-                        aria-label="Analyze research question"
-                      >
-                        <ArrowRight size={20} />
-                      </button>
+                        <p>
+                          Create a project and upload
+                          at least two PDFs.
+                        </p>
+
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          onClick={() =>
+                            setView("library")
+                          }
+                        >
+                          Open Paper Library
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
                     </div>
-                  </form>
+                  )}
+
+                  {selectedProject &&
+                    selectedProject.document_count <
+                      2 && (
+                    <div className="wb-setup-notice">
+                      <BookOpen size={18} />
+
+                      <div>
+                        <strong>
+                          Add more research papers
+                        </strong>
+
+                        <p>
+                          Research Mode requires at
+                          least two indexed PDFs.
+                        </p>
+
+                        <button
+                          type="button"
+                          className="secondary-action"
+                          onClick={() =>
+                            setView("library")
+                          }
+                        >
+                          Add papers
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="suggestions">
                     <span className="section-caption">
@@ -798,119 +1799,110 @@ function App() {
                     </span>
 
                     <div className="suggestion-list">
-                      {examples.map(
-                        (example) => (
-                          <button
-                            key={example}
-                            className="suggestion"
-                            onClick={() =>
-                              setQuestion(
-                                example
-                              )
-                            }
-                          >
-                            <span>
-                              {example}
-                            </span>
-                            <ArrowRight
-                              size={16}
-                            />
-                          </button>
-                        )
-                      )}
+                      {examples.map((example) => (
+                        <button
+                          type="button"
+                          key={example}
+                          className="suggestion"
+                          onClick={() =>
+                            setQuestion(example)
+                          }
+                        >
+                          <span>{example}</span>
+                          <ArrowRight size={16} />
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   <div className="value-strip">
                     <div>
                       <FileSearch size={20} />
+
                       <strong>
                         Traceable evidence
                       </strong>
+
                       <span>
-                        Paper, page and
-                        passage references
+                        Paper, page and passage
+                        references
                       </span>
                     </div>
 
                     <div>
                       <ShieldCheck size={20} />
+
                       <strong>
                         Transparent audits
                       </strong>
+
                       <span>
-                        Clear analysis
-                        completion status
+                        Clear analysis completion
+                        status
                       </span>
                     </div>
 
                     <div>
                       <Sparkles size={20} />
+
                       <strong>
                         Cross-paper insight
                       </strong>
+
                       <span>
-                        Shared themes and
-                        grounded comparisons
+                        Shared themes and grounded
+                        comparisons
                       </span>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div className="research-results">
-                  <button
-                    className="back-link"
-                    onClick={newResearch}
-                  >
-                    <ArrowLeft size={17} />
-                    New research
-                  </button>
+                <div className="research-results wb-results">
 
-                  <div className="result-heading">
-                    <span className="section-caption">
-                      RESEARCH QUESTION
-                    </span>
-                    <h1>
-                      {submittedQuestion}
-                    </h1>
-                  </div>
+<div className="wb-results-top">
+  <button
+    type="button"
+    className="back-link"
+    onClick={newResearch}
+  >
+    <ArrowLeft size={16} />
+    New research
+  </button>
+</div>
+
+                  {/* LOADING */}
 
                   {loading && (
                     <div
                       className="analysis-loading"
                       role="status"
                     >
-                      <div className="loading-symbol">
-                        <LoaderCircle
-                          size={26}
-                          className="spinning"
-                        />
-                      </div>
+                      <LoaderCircle
+                        size={27}
+                        className="spinning"
+                      />
 
                       <h2>
-                        Analyzing your
-                        research
+                        Analyzing your research
                       </h2>
 
                       <p>
-                        Retrieving relevant
-                        passages, comparing
-                        findings and preparing
-                        your evidence audit.
-                        This may take a
-                        little time.
+                        Retrieving passages,
+                        comparing findings and
+                        preparing your evidence
+                        audit.
                       </p>
                     </div>
                   )}
+
+                  {/* ERROR */}
 
                   {error && !loading && (
                     <div
                       className="analysis-error"
                       role="alert"
                     >
-                      <AlertCircle
-                        size={23}
-                      />
+                      <AlertCircle size={23} />
 
                       <div>
                         <h2>
@@ -921,6 +1913,7 @@ function App() {
                         <p>{error}</p>
 
                         <button
+                          type="button"
                           className="retry-button"
                           onClick={() =>
                             void runResearch(
@@ -928,394 +1921,363 @@ function App() {
                             )
                           }
                         >
-                          <RotateCcw
-                            size={16}
-                          />
+                          <RotateCcw size={16} />
                           Try again
                         </button>
                       </div>
                     </div>
                   )}
 
+                  {/* RESEARCH RESPONSE */}
+
                   {result && !loading && (
                     <>
-                      <div
-                        className={`audit-banner audit-${result.analysis_status}`}
-                        role="status"
-                      >
-                        <div className="audit-banner-icon">
-                          {result.analysis_status ===
-                          "completed" ? (
-                            <CheckCircle2
-                              size={21}
-                            />
-                          ) : result.analysis_status ===
-                            "no_evidence" ? (
-                            <CircleHelp
-                              size={21}
-                            />
-                          ) : (
-                            <AlertCircle
-                              size={21}
-                            />
-                          )}
-                        </div>
+                      <section className="wb-response-card">
+                        <span className="section-caption">
+                          RESEARCH RESPONSE
+                        </span>
 
-                        <div>
-                          <strong>
-                            {
-                              statusLabels[
-                                result.analysis_status
-                              ]
-                            }
-                          </strong>
+                        <h1>
+                          {submittedQuestion}
+                        </h1>
 
-                          <p>
-                            {
-                              result.analysis_message
-                            }
-                          </p>
-
-                          {result.failed_group_count >
-                            0 && (
-                            <span className="audit-detail">
-                              {
-                                result.failed_group_count
-                              }{" "}
-                              claim group(s)
-                              could not be
-                              analyzed.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {result.citation_validation && (
-  <section
-    className={`citation-panel citation-${result.citation_validation.status}`}
-    aria-label="Citation validation"
-  >
-    <div className="citation-panel-heading">
-      <ShieldCheck size={20} />
-
-      <div>
-        <strong>Citation validation</strong>
-
-        <span className="citation-status">
-          {result.citation_validation.status ===
-          "structurally_valid"
-            ? "Structurally valid"
-            : result.citation_validation.status ===
-                "review_required"
-              ? "Review required"
-              : "Invalid citations detected"}
-        </span>
-      </div>
-    </div>
-
-    <p className="citation-count">
-      {result.citation_validation.valid_citation_count} of{" "}
-      {result.citation_validation.checked_citation_count}{" "}
-      citations valid
-    </p>
-
-    <div className="citation-metrics">
-      <span>
-        {result.citation_validation.invalid_citations.length}{" "}
-        invalid
-      </span>
-
-      <span>
-        {result.citation_validation.malformed_citations.length}{" "}
-        malformed
-      </span>
-
-      <span>
-        {result.citation_validation.uncited_passage_warnings.length}{" "}
-        uncited-passage warnings
-      </span>
-    </div>
-
-    {result.citation_validation.invalid_citations.length > 0 && (
-      <div className="citation-issues">
-        <strong>Invalid references</strong>
-        <ul>
-          {result.citation_validation.invalid_citations.map(
-            (item, index) => (
-              <li key={index}>{item.citation}</li>
-            )
-          )}
-        </ul>
-      </div>
-    )}
-
-    {result.citation_validation.malformed_citations.length > 0 && (
-      <div className="citation-issues">
-        <strong>Malformed references</strong>
-        <ul>
-          {result.citation_validation.malformed_citations.map(
-            (item, index) => (
-              <li key={index}>{item}</li>
-            )
-          )}
-        </ul>
-      </div>
-    )}
-
-    <p className="citation-note">
-      Structural validation checks document and page
-      references. It does not establish that a cited
-      passage supports the associated claim.
-    </p>
-  </section>
-)}
-
-                      <section className="answer-section">
-                        <div className="result-section-title">
-                          <Sparkles
-                            size={19}
-                          />
-                          <h2>
-                            Research synthesis
-                          </h2>
-                        </div>
-
-                        <div className="answer-card">
+                        <div className="wb-response-overview">
                           {result.answer ? (
-                            <div className="answer-text research-markdown">
-                              <ReactMarkdown>
-                                {
-                                  result.answer
-                                }
-                              </ReactMarkdown>
-                            </div>
+                            <ResearchMarkdown
+                              content={linkedAnswer}
+                            />
                           ) : (
-                            <p className="empty-answer">
-                              No answer was
-                              generated for
-                              this question.
+                            <p>
+                              No synthesis was
+                              generated for this
+                              question.
                             </p>
                           )}
-
-                          {!result.audit_completed &&
-                            result.answer && (
-                              <div className="answer-caution">
-                                <AlertCircle
-                                  size={16}
-                                />
-                                <span>
-                                  This answer
-                                  was generated
-                                  from retrieved
-                                  passages, but
-                                  the claim-level
-                                  audit was not
-                                  fully completed.
-                                </span>
-                              </div>
-                            )}
-                        </div>
-                      </section>
-
-                      <section className="result-summary">
-                        <div>
-                          <span className="summary-number">
-                            {
-                              evidence.length
-                            }
-                          </span>
-                          <span className="summary-label">
-                            Evidence passages
-                          </span>
                         </div>
 
-                        <div>
-                          <span className="summary-number">
-                            {
-                              analysis?.source_count ??
-                              new Set(
-                                evidence.map(
-                                  (item) =>
-                                    item.paper
-                                )
-                              ).size
-                            }
-                          </span>
-                          <span className="summary-label">
-                            Source papers
-                          </span>
-                        </div>
+                        {!result.audit_completed &&
+                          result.answer && (
+                          <div className="answer-caution">
+                            <AlertCircle size={16} />
 
-                        <div>
-                          <span className="summary-number">
-                            {
-                              analysis?.claim_groups
-                                .length ?? 0
-                            }
-                          </span>
-                          <span className="summary-label">
-                            Claim groups
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="summary-number">
-                            {
-                              comparisons.length
-                            }
-                          </span>
-                          <span className="summary-label">
-                            Cross-paper comparisons
-                          </span>
-                        </div>
-                      </section>
-
-                      <section className="themes-section">
-                        <div className="result-section-title">
-                          <GitCompareArrows
-                            size={19}
-                          />
-                          <h2>
-                            Cross-paper analysis
-                          </h2>
-                        </div>
-
-                        <p className="themes-intro">
-                          Compare related
-                          findings across your
-                          papers. Each comparison
-                          distinguishes common
-                          research concerns from
-                          method-specific
-                          agreement or
-                          contradiction.
-                        </p>
-
-                        {crossPaperThemes.length >
-                        0 ? (
-                          <div className="themes-list">
-                            {crossPaperThemes.map(
-                              renderTheme
-                            )}
-                          </div>
-                        ) : (
-                          <div className="themes-empty">
-                            <CircleHelp
-                              size={19}
-                            />
-                            <p>
-                              No shared research
-                              themes were
-                              identified in
-                              the selected
-                              evidence. This
-                              does not mean
-                              the papers have
-                              no topics in
-                              common.
-                            </p>
+                            <span>
+                              The claim-level audit
+                              was not fully completed.
+                              Review the original
+                              evidence before relying
+                              on the synthesis.
+                            </span>
                           </div>
                         )}
 
-                        {singlePaperThemes.length >
-                          0 && (
-                          <div className="single-paper-themes">
-                            <h3>
-                              Other identified
-                              themes
-                            </h3>
+                        <div className="wb-metric-grid">
+                          <div className="wb-metric-card">
+                            <ShieldCheck size={20} />
 
+                            <strong>
+                              {
+                                statusLabels[
+                                  result
+                                    .analysis_status
+                                ]
+                              }
+                            </strong>
+
+                            <span>
+                              Claim audit
+                            </span>
+                          </div>
+
+                          <div className="wb-metric-card">
+                            <CheckCircle2 size={20} />
+
+                            <strong>
+                              {citationValidation
+                                ? `${citationValidation.valid_citation_count} of ${citationValidation.checked_citation_count}`
+                                : "Not reported"}
+                            </strong>
+
+                            <span>
+                              Valid citations
+                            </span>
+                          </div>
+
+                          <div className="wb-metric-card">
+                            <BookOpen size={20} />
+
+                            <strong>
+                              {evidence.length}
+                              {" "}passages
+                            </strong>
+
+                            <span>
+                              {sourceCount}
+                              {" "}source
+                              {sourceCount === 1
+                                ? " paper"
+                                : " papers"}
+                            </span>
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* RESULT TABS */}
+
+                      <div
+                        className="wb-result-tabs"
+                        role="tablist"
+                        aria-label="Research results"
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={
+                            resultTab ===
+                            "synthesis"
+                          }
+                          className={
+                            resultTab ===
+                            "synthesis"
+                              ? "active"
+                              : ""
+                          }
+                          onClick={() =>
+                            setResultTab(
+                              "synthesis"
+                            )
+                          }
+                        >
+                          <Sparkles size={17} />
+                          Synthesis
+                        </button>
+
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={
+                            resultTab ===
+                            "themes"
+                          }
+                          className={
+                            resultTab ===
+                            "themes"
+                              ? "active"
+                              : ""
+                          }
+                          onClick={() =>
+                            setResultTab(
+                              "themes"
+                            )
+                          }
+                        >
+                          <GitCompareArrows
+                            size={17}
+                          />
+                          Themes & Comparisons
+                        </button>
+
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={
+                            resultTab ===
+                            "evidence"
+                          }
+                          className={
+                            resultTab ===
+                            "evidence"
+                              ? "active"
+                              : ""
+                          }
+                          onClick={() =>
+                            setResultTab(
+                              "evidence"
+                            )
+                          }
+                        >
+                          <BookOpen size={17} />
+                          Evidence
+                          <span className="wb-tab-count">
+                            {evidence.length}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* SYNTHESIS TAB */}
+
+                      {resultTab ===
+                        "synthesis" && (
+                        <section className="wb-tab-panel">
+                          <div className="result-section-title">
+                            <Sparkles size={19} />
+                            <h2>
+                              Research synthesis
+                            </h2>
+                          </div>
+
+                          <div className="answer-card">
+                            {result.answer ? (
+                              <ResearchMarkdown
+                                content={linkedAnswer}
+                              />
+                            ) : (
+                              <p className="empty-answer">
+                                No answer was
+                                generated.
+                              </p>
+                            )}
+                          </div>
+
+                          <section className="result-summary">
+                            <div>
+                              <span className="summary-number">
+                                {
+                                  evidence.length
+                                }
+                              </span>
+
+                              <span className="summary-label">
+                                Evidence passages
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="summary-number">
+                                {sourceCount}
+                              </span>
+
+                              <span className="summary-label">
+                                Source papers
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="summary-number">
+                                {analysis
+                                  ?.claim_groups
+                                  .length ?? 0}
+                              </span>
+
+                              <span className="summary-label">
+                                Claim groups
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className="summary-number">
+                                {
+                                  comparisons.length
+                                }
+                              </span>
+
+                              <span className="summary-label">
+                                Comparisons
+                              </span>
+                            </div>
+                          </section>
+                        </section>
+                      )}
+
+                      {/* THEMES TAB */}
+
+                      {resultTab ===
+                        "themes" && (
+                        <section className="themes-section wb-tab-panel">
+                          <div className="result-section-title">
+                            <GitCompareArrows
+                              size={19}
+                            />
+
+                            <h2>
+                              Themes & Comparisons
+                            </h2>
+                          </div>
+
+                          <p className="themes-intro">
+                            Explore shared research
+                            concerns, differences
+                            between papers and the
+                            limits of each comparison.
+                          </p>
+
+                          {crossPaperThemes.length >
+                          0 ? (
                             <div className="themes-list">
-                              {singlePaperThemes.map(
+                              {crossPaperThemes.map(
                                 renderTheme
                               )}
                             </div>
+                          ) : (
+                            <div className="themes-empty">
+                              <CircleHelp
+                                size={19}
+                              />
+
+                              <p>
+                                No shared themes
+                                were identified
+                                in the selected
+                                evidence.
+                              </p>
+                            </div>
+                          )}
+
+                          {singlePaperThemes.length >
+                            0 && (
+                            <div className="single-paper-themes">
+                              <h3>
+                                Other identified
+                                themes
+                              </h3>
+
+                              <div className="themes-list">
+                                {singlePaperThemes.map(
+                                  renderTheme
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </section>
+                      )}
+
+                      {/* EVIDENCE TAB */}
+
+                      {resultTab ===
+                        "evidence" && (
+                        <section className="evidence-section wb-tab-panel">
+                          <div className="result-section-title">
+                            <FileSearch size={19} />
+
+                            <h2>
+                              Retrieved evidence
+                            </h2>
                           </div>
-                        )}
-                      </section>
 
-                      <section className="evidence-section">
-                        <div className="result-section-title">
-                          <FileSearch
-                            size={19}
-                          />
-                          <h2>
-                            Retrieved evidence
-                          </h2>
-                        </div>
-
-                        {evidence.length ===
-                        0 ? (
-                          <div className="empty-evidence">
-                            No evidence
-                            passages were
-                            returned.
-                          </div>
-                        ) : (
-                          <div className="evidence-list">
-                            {evidence.map(
-                              (
-                                item,
-                                index
-                              ) => (
-                                <button
-                                  className={`evidence-card ${
-                                    selectedEvidence !== null &&
-                                    evidenceMatches(selectedEvidence, item)
-                                      ? "selected"
-                                      : ""
-                                  }`}
-                                  key={index}
-                                  onClick={() => inspectEvidence(item)}
-                                >
-                                  <div className="evidence-card-top">
-                                    <span className="evidence-id">
-                                      {evidenceLabel(
-                                        item,
-                                        index
-                                      )}
-                                    </span>
-
-                                    <ChevronRight
-                                      size={17}
-                                    />
-                                  </div>
-
-                                  <strong>
-                                    {evidenceSource(
-                                      item
-                                    )}
-                                  </strong>
-
-                                  {evidencePage(
-                                    item
-                                  ) && (
-                                    <span className="evidence-page">
-                                      {evidencePage(
-                                        item
-                                      )}
-                                    </span>
-                                  )}
-
-                                  <p>
-                                    {evidenceText(
-                                      item
-                                    )}
-                                  </p>
-                                </button>
-                              )
-                            )}
-                          </div>
-                        )}
-                      </section>
+                          {evidence.length ===
+                          0 ? (
+                            <div className="empty-evidence">
+                              No evidence passages
+                              were returned.
+                            </div>
+                          ) : (
+                            <div className="evidence-list">
+                              {evidence.map(
+                                renderEvidenceCard
+                              )}
+                            </div>
+                          )}
+                        </section>
+                      )}
                     </>
                   )}
                 </div>
               )}
             </main>
 
+            {/* EVIDENCE INSPECTOR */}
+
             {inspectorOpen && (
-              <aside className="inspector">
+              <aside className="inspector wb-inspector">
                 <div className="inspector-header">
                   <div>
                     <span className="section-caption">
@@ -1323,17 +2285,16 @@ function App() {
                     </span>
 
                     <h2>
-                      Evidence inspector
+                      Evidence Inspector
                     </h2>
                   </div>
 
                   <button
+                    type="button"
                     className="icon-button"
                     aria-label="Close evidence inspector"
                     onClick={() =>
-                      setInspectorOpen(
-                        false
-                      )
+                      setInspectorOpen(false)
                     }
                   >
                     <PanelRightClose
@@ -1342,67 +2303,83 @@ function App() {
                   </button>
                 </div>
 
+                <div
+                  className="wb-inspector-tabs"
+                  role="tablist"
+                  aria-label="Evidence inspector"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={
+                      inspectorTab ===
+                      "overview"
+                    }
+                    className={
+                      inspectorTab ===
+                      "overview"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setInspectorTab(
+                        "overview"
+                      )
+                    }
+                  >
+                    Overview
+                  </button>
+
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={
+                      inspectorTab ===
+                      "evidence"
+                    }
+                    className={
+                      inspectorTab ===
+                      "evidence"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setInspectorTab(
+                        "evidence"
+                      )
+                    }
+                  >
+                    Evidence
+                    {result
+                      ? ` (${evidence.length})`
+                      : ""}
+                  </button>
+
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={
+                      inspectorTab ===
+                      "comparisons"
+                    }
+                    className={
+                      inspectorTab ===
+                      "comparisons"
+                        ? "active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setInspectorTab(
+                        "comparisons"
+                      )
+                    }
+                  >
+                    Comparisons
+                  </button>
+                </div>
+
                 <div className="inspector-body">
-                  {selectedItem ? (
-                    <div className="selected-evidence">
-                      <span className="section-caption">
-                        {(() => {
-                          const index = evidence.findIndex(
-                            (item) => evidenceMatches(item, selectedItem)
-                          );
-                          return index >= 0
-                            ? evidenceLabel(selectedItem, index)
-                            : "Additional thematic evidence";
-                        })()}
-                      </span>
-
-                      <h3>
-                        {evidenceSource(
-                          selectedItem
-                        )}
-                      </h3>
-
-                      {evidencePage(
-                        selectedItem
-                      ) && (
-                        <span className="evidence-page">
-                          {evidencePage(
-                            selectedItem
-                          )}
-                        </span>
-                      )}
-
-                      {selectedItem.claim && (
-                        <div className="inspector-claim">
-                          <strong>
-                            Extracted finding
-                          </strong>
-
-                          <p>
-                            {
-                              selectedItem.claim
-                            }
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="selected-passage">
-                        {evidenceText(
-                          selectedItem
-                        )}
-                      </div>
-
-                      <p className="inspector-disclaimer">
-                        Retrieved source
-                        passage. Its presence
-                        does not by itself
-                        establish support
-                        for the generated
-                        answer or thematic
-                        interpretation.
-                      </p>
-                    </div>
-                  ) : (
+                  {!result && (
                     <div className="inspector-empty">
                       <div className="inspector-illustration">
                         <FileSearch
@@ -1417,184 +2394,423 @@ function App() {
                       </h3>
 
                       <p>
-                        Select a retrieved
-                        passage or thematic
-                        finding to inspect
-                        its source details
-                        here.
+                        Run a research query
+                        to inspect its audit,
+                        citations and original
+                        source passages here.
                       </p>
                     </div>
                   )}
 
-                  {result && (
-                    <div className="inspector-guide">
-                      <span className="section-caption">
-                        AUDIT OVERVIEW
-                      </span>
+                  {result &&
+                    inspectorTab ===
+                      "overview" && (
+                    <>
+                      <div className="wb-inspector-card">
+                        <span className="section-caption">
+                          CLAIM AUDIT
+                        </span>
 
-                      <div className="guide-row">
-                        <ShieldCheck
-                          size={17}
-                        />
-                        <span>
-                          {
-                            statusLabels[
-                              result.analysis_status
-                            ]
+                        <div
+                          className={`audit-banner audit-${result.analysis_status}`}
+                          role="status"
+                        >
+                          {result.analysis_status ===
+                          "completed" ? (
+                            <CheckCircle2
+                              size={20}
+                            />
+                          ) : (
+                            <AlertCircle
+                              size={20}
+                            />
+                          )}
+
+                          <div>
+                            <strong>
+                              {
+                                statusLabels[
+                                  result
+                                    .analysis_status
+                                ]
+                              }
+                            </strong>
+
+                            <p>
+                              {
+                                result.analysis_message
+                              }
+                            </p>
+                          </div>
+                        </div>
+
+                        {result.failed_group_count >
+                          0 && (
+                          <p className="audit-detail">
+                            {
+                              result.failed_group_count
+                            }{" "}
+                            claim group(s)
+                            could not be
+                            analyzed.
+                          </p>
+                        )}
+                      </div>
+
+                      {renderCitationValidation()}
+
+                      <div className="wb-inspector-card">
+                        <span className="section-caption">
+                          EVIDENCE
+                        </span>
+
+                        <div className="guide-row">
+                          <BookOpen size={18} />
+
+                          <span>
+                            {
+                              evidence.length
+                            }{" "}
+                            retrieved passages
+                          </span>
+                        </div>
+
+                        <div className="guide-row">
+                          <FileSearch size={18} />
+
+                          <span>
+                            {sourceCount}
+                            {" "}source papers
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="wb-inspector-action"
+                          onClick={() =>
+                            setInspectorTab(
+                              "evidence"
+                            )
                           }
-                        </span>
+                        >
+                          Inspect evidence
+                          <ArrowRight
+                            size={15}
+                          />
+                        </button>
                       </div>
+                    </>
+                  )}
 
-                      <div className="guide-row">
-                        <BookOpen
-                          size={17}
-                        />
-                        <span>
-                          {evidence.length}{" "}
-                          evidence passage(s)
-                        </span>
+                  {result &&
+                    inspectorTab ===
+                      "evidence" && (
+                    <div className="wb-inspector-evidence">
+                      {selectedEvidence ? (
+                        <div className="selected-evidence">
+                          <span className="section-caption">
+                            SELECTED PASSAGE
+                          </span>
+
+                          <h3>
+                            {evidenceSource(
+                              selectedEvidence
+                            )}
+                          </h3>
+
+                          {evidencePage(
+                            selectedEvidence
+                          ) && (
+                            <span className="evidence-page">
+                              {evidencePage(
+                                selectedEvidence
+                              )}
+                            </span>
+                          )}
+
+                          {selectedEvidence.claim && (
+                            <div className="inspector-claim">
+                              <strong>
+                                Extracted finding
+                              </strong>
+
+                              <p>
+                                {
+                                  selectedEvidence.claim
+                                }
+                              </p>
+                            </div>
+                          )}
+
+                          <div className="selected-passage">
+                            {evidenceText(
+                              selectedEvidence
+                            )}
+                          </div>
+
+                          <PdfSourceLink
+                            item={
+                              selectedEvidence
+                            }
+                            showUnavailable
+                          />
+
+                          <p className="inspector-disclaimer">
+                            Retrieved source
+                            text does not by
+                            itself establish
+                            support for a
+                            generated claim.
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="wb-inspector-hint">
+                          Select a passage
+                          to inspect its
+                          original source.
+                        </p>
+                      )}
+
+                      <div className="wb-inspector-evidence-list">
+                        {evidence.map(
+                          (item, index) => (
+                            <button
+                              type="button"
+                              key={index}
+                              className={`wb-inspector-evidence-item ${
+                                selectedEvidence &&
+                                evidenceMatches(
+                                  selectedEvidence,
+                                  item
+                                )
+                                  ? "active"
+                                  : ""
+                              }`}
+                              onClick={() =>
+                                setSelectedEvidence(
+                                  item
+                                )
+                              }
+                            >
+                              <span>
+                                {evidenceLabel(
+                                  item,
+                                  index
+                                )}
+                              </span>
+
+                              <strong>
+                                {evidenceSource(
+                                  item
+                                )}
+                              </strong>
+
+                              <small>
+                                {evidencePage(
+                                  item
+                                ) ??
+                                  "Page not specified"}
+                              </small>
+                            </button>
+                          )
+                        )}
                       </div>
+                    </div>
+                  )}
 
-                      <div className="guide-row">
-                        <GitCompareArrows
-                          size={17}
-                        />
-                        <span>
+                  {result &&
+                    inspectorTab ===
+                      "comparisons" && (
+                    <div className="wb-inspector-comparisons">
+                      <div className="wb-inspector-card">
+                        <span className="section-caption">
+                          CROSS-PAPER ANALYSIS
+                        </span>
+
+                        <strong>
                           {
                             comparisons.length
                           }{" "}
-                          cross-paper
-                          comparison(s)
-                        </span>
+                          comparisons
+                        </strong>
+
+                        <p>
+                          {
+                            crossPaperThemes.length
+                          }{" "}
+                          shared themes
+                          identified.
+                        </p>
                       </div>
 
-                      <div className="guide-row">
-                        <CircleHelp
-                          size={17}
-                        />
-                        <span>
-                          {
-                            result.failed_group_count
-                          }{" "}
-                          failed claim
-                          group(s)
-                        </span>
-                      </div>
+                      {comparisons.length >
+                      0 ? (
+                        comparisons.map(
+                          (comparison) => (
+                            <button
+                              type="button"
+                              key={
+                                comparison.theme_id
+                              }
+                              className="wb-inspector-comparison-item"
+                              onClick={() => {
+                                setResultTab(
+                                  "themes"
+                                );
+                              }}
+                            >
+                              <strong>
+                                {
+                                  comparison.theme
+                                }
+                              </strong>
+
+                              <span>
+                                {
+                                  comparison.relationship_label
+                                }
+                              </span>
+
+                              <ArrowRight
+                                size={15}
+                              />
+                            </button>
+                          )
+                        )
+                      ) : (
+                        <p className="wb-inspector-hint">
+                          No cross-paper
+                          comparisons were
+                          returned.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
               </aside>
             )}
           </div>
-        
-) : view === "library" ? (
-  <PaperLibrary onStartResearch={newResearch} />
-) : (
-  <main className="secondary-page">
-    <div className="secondary-icon">
-      <History size={27} />
-    </div>
+        ) : view === "library" ? (
+          /* PAPER LIBRARY */
 
-    <h1>Research history</h1>
+          <main className="secondary-page wb-library-page">
+            <ProjectWorkspace
+              selectedProject={selectedProject}
+              onSelectProject={(project) => {
+                selectProject(project);
 
-    <p>
-      Previous research sessions will appear here
-      when we implement session storage.
-    </p>
+                // Refresh sidebar projects and
+                // citation sources after library changes.
+                void refreshProjects(
+                  project?.id
+                );
 
-    <button
-      className="secondary-action"
-      onClick={newResearch}
-    >
-      Start new research
-      <ArrowRight size={17} />
-    </button>
-  </main>
-)}
+                setPapersVersion(
+                  (version) => version + 1
+                );
+              }}
+            />
+          </main>
+        ) : (
+          /* HISTORY */
+
+          <ResearchHistory
+            project={selectedProject}
+            version={historyVersion}
+            onOpen={reopenResearchSession}
+            onNew={newResearch}
+          />
+        )}
       </div>
 
-      {sourceDialogOpen && selectedItem && (
+      {/* ORIGINAL EVIDENCE PASSAGE DIALOG */}
+
+      {sourceDialogOpen &&
+        selectedEvidence && (
         <div
+          className="wb-dialog-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
               setSourceDialogOpen(false);
             }
           }}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            background: "rgba(15, 23, 42, 0.65)",
-          }}
         >
           <section
+            className="wb-source-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="source-dialog-heading"
-            style={{
-              width: "min(100%, 680px)",
-              maxHeight: "min(85vh, 820px)",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-              border: "1px solid var(--border)",
-              borderRadius: 16,
-              background: "var(--surface)",
-              color: "var(--text)",
-              boxShadow: "0 24px 80px rgba(0, 0, 0, 0.28)",
-            }}
           >
-            <header
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: 16,
-                padding: 20,
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
+            <header className="wb-dialog-header">
               <div>
-                <span className="section-caption">SOURCE PASSAGE</span>
-                <h2
-                  id="source-dialog-heading"
-                  style={{ margin: "8px 0", fontSize: 19 }}
-                >
-                  {evidenceSource(selectedItem)}
+                <span className="section-caption">
+                  ORIGINAL SOURCE PASSAGE
+                </span>
+
+                <h2 id="source-dialog-heading">
+                  {evidenceSource(
+                    selectedEvidence
+                  )}
                 </h2>
-                {evidencePage(selectedItem) && (
+
+                {evidencePage(
+                  selectedEvidence
+                ) && (
                   <span className="evidence-page">
-                    {evidencePage(selectedItem)}
+                    {evidencePage(
+                      selectedEvidence
+                    )}
                   </span>
                 )}
               </div>
+
               <button
                 type="button"
                 className="icon-button"
                 aria-label="Close source passage"
-                onClick={() => setSourceDialogOpen(false)}
+                onClick={() =>
+                  setSourceDialogOpen(false)
+                }
               >
                 <X size={20} />
               </button>
             </header>
-            <div style={{ overflowY: "auto", padding: 20 }}>
-              {selectedItem.claim && (
+
+            <div className="wb-dialog-body">
+              {selectedEvidence.claim && (
                 <div className="inspector-claim">
-                  <strong>Extracted finding</strong>
-                  <p>{selectedItem.claim}</p>
+                  <strong>
+                    Extracted finding
+                  </strong>
+
+                  <p>
+                    {
+                      selectedEvidence.claim
+                    }
+                  </p>
                 </div>
               )}
+
               <div className="selected-passage">
-                {evidenceText(selectedItem)}
+                {evidenceText(
+                  selectedEvidence
+                )}
               </div>
+
+              <PdfSourceLink
+                item={selectedEvidence}
+                showUnavailable
+              />
+
               <p className="inspector-disclaimer">
-                Retrieved source passage. Verify the original paper
-                before drawing a conclusion from this finding.
+                This is retrieved source text.
+                Verify that it supports the
+                associated claim before using
+                it in your research.
               </p>
             </div>
           </section>
@@ -1603,5 +2819,3 @@ function App() {
     </div>
   );
 }
-
-export default App;

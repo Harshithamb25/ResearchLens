@@ -124,37 +124,40 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "http://localhost:8000";
 
+
 export async function analyzeResearch(
+  projectId: string,
   question: string,
   signal?: AbortSignal
 ): Promise<QueryResponse> {
-  const response = await fetch(`${API_URL}/query`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      question: question.trim(),
-    }),
-    signal,
-  });
+  const response = await fetch(
+    `${API_URL}/projects/${encodeURIComponent(projectId)}/query`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question: question.trim(),
+      }),
+      signal,
+    }
+  );
 
   if (!response.ok) {
-    if (response.status === 422) {
-      throw new Error(
-        "Please enter a valid research question."
-      );
+    let message = `Research request failed (HTTP ${response.status}).`;
+
+    try {
+      const error = await response.json();
+
+      if (typeof error.detail === "string") {
+        message = error.detail;
+      }
+    } catch {
+      // Retain the HTTP error message.
     }
 
-    if (response.status === 400) {
-      throw new Error(
-        "The research request was rejected."
-      );
-    }
-
-    throw new Error(
-      "ResearchLens could not complete the request. Please try again."
-    );
+    throw new Error(message);
   }
 
   const data: QueryResponse = await response.json();

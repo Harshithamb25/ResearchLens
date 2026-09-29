@@ -36,3 +36,25 @@ chroma_db_backup_before_reindex/
 # Frontend build
 frontend/node_modules/
 frontend/dist/
+
+# Local research data and generated files
+/data/papers/
+/data/projects/
+/data/reindex_backups/
+/data/*.db
+
+# Local debugging and exported answers
+/debug_*.md
+/debug_*.json
+/researchlens*.md
+/researchlens*.csv
+/frontend/researchlens*.md
+
+# Python and frontend local environments
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.env
+.env.*
+!.env.example
