@@ -2,6 +2,7 @@
 import json
 
 import pytest
+from types import SimpleNamespace
 
 from backend.analysis.evidence import Evidence
 import backend.analysis.relationship_analyzer as relationship_analyzer
@@ -36,9 +37,13 @@ def mock_gemini(monkeypatch, relationships):
         return MockResponse()
 
     monkeypatch.setattr(
-        relationship_analyzer.client.models,
-        "generate_content",
-        mock_generate_content
+        relationship_analyzer,
+        "_get_client",
+        lambda: SimpleNamespace(
+            models=SimpleNamespace(
+                generate_content=mock_generate_content
+            )
+        ),
     )
 
 
