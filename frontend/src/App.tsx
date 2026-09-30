@@ -82,10 +82,16 @@ interface PaperLookup {
   papers: ProjectPaper[];
 }
 
-const examples = [
-  "What limitations and challenges do the papers identify?",
-  "Compare the methods and datasets used across these papers.",
-  "Where do the papers agree or disagree?",
+const documentExamples = [
+  "What is the main idea of this document?",
+  "Summarize the methodology in simple terms.",
+  "What findings or conclusions does it report?",
+];
+
+const researchExamples = [
+  "Compare the methodologies across the papers.",
+  "Which datasets and evaluation metrics are used?",
+  "What limitations or research gaps are reported?",
 ];
 
 const statusLabels: Record<AnalysisStatus, string> = {
@@ -1570,7 +1576,7 @@ export default function App() {
      ============================================================ */
 
   return (
-    <div className="app-shell">
+    <div className={"app-shell " + (selectedProject?.mode === "document" ? "mode-document" : "mode-research")}>
       {sidebarOpen && (
         <button
           type="button"
@@ -1598,8 +1604,8 @@ export default function App() {
           </div>
 
           <div className="brand-copy">
-            <strong>ResearchLens</strong>
-            <span>Evidence-aware research</span>
+            <strong>Lens</strong>
+            <span>Documents &amp; research</span>
           </div>
 
           <button
@@ -1620,7 +1626,7 @@ export default function App() {
           onClick={newResearch}
         >
           <Plus size={18} />
-          New research
+          New conversation
         </button>
 
         <div className="nav-heading">
@@ -1893,7 +1899,7 @@ export default function App() {
           </button>
 
           <div className="version">
-            ResearchLens · Development preview
+            Lens · Documents & research
           </div>
         </div>
       </aside>
@@ -2143,7 +2149,10 @@ export default function App() {
                     </span>
 
                     <div className="suggestion-list">
-                      {examples.map((example) => (
+                      {(selectedProject?.mode === "document"
+                        ? documentExamples
+                        : researchExamples
+                      ).map((example) => (
                         <button
                           type="button"
                           key={example}
@@ -2159,7 +2168,8 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="value-strip">
+                  {selectedProject?.mode === "research" && (
+                    <div className="value-strip">
                     <div>
                       <FileSearch size={20} />
 
@@ -2692,7 +2702,7 @@ export default function App() {
 
             {/* EVIDENCE INSPECTOR */}
 
-            {inspectorOpen && (
+            {selectedProject?.mode === "research" && inspectorOpen && (
               <aside className="inspector wb-inspector">
                 <div className="inspector-header">
                   <div>
