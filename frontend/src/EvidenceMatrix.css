@@ -410,3 +410,27 @@
     width: 300px;
   }
 }
+
+
+.matrix-accuracy-button {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.matrix-accuracy-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.matrix-accuracy-empty {
+  text-align: center;
+}
+
+.matrix-source-card strong {
+  display: block;
+  margin-top: 0.3rem;
+  line-height: 1.45;
+}
