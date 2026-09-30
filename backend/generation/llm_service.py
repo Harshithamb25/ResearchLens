@@ -553,6 +553,7 @@ def _build_prompt(
     prepared,
     grounded,
     analysis_status,
+    conversation_context=None,
 ):
     context = json.dumps(
         prepared,
@@ -720,6 +721,11 @@ unnecessary repetition and duplicate citations.
 Do not reproduce internal evidence identifiers
 or extractor metadata in the final answer.
 
+CONVERSATION CONTEXT:
+{conversation}
+
+Use the recent conversation only to resolve references such as "they", "this method", "the second paper", or omitted context. Do not treat previous assistant statements as evidence; verify all factual claims against the supplied source passages.
+
 USER QUESTION:
 {question}
 
@@ -793,6 +799,7 @@ def generate_answer(
     evidence,
     theme_comparisons=None,
     analysis_status=None,
+    conversation_context=None,
 ):
     """Generate and validate a source-attributed answer."""
     prepared = _prepare_evidence(
@@ -812,6 +819,7 @@ def generate_answer(
         prepared,
         grounded,
         analysis_status,
+        conversation_context=conversation_context,
     )
 
     prompt = original_prompt
@@ -889,6 +897,7 @@ def generate_answer(
 def generate_document_answer(
     question,
     evidence,
+    conversation_context=None,
 ):
     """Generate a simple grounded answer for Document Lens."""
     prepared = _prepare_evidence(evidence)
@@ -927,6 +936,11 @@ Rules:
 - Do not turn document content into research comparisons
   unless the user explicitly asks for a comparison.
 - Write concise professional Markdown.
+
+CONVERSATION CONTEXT:
+{conversation}
+
+Use the recent conversation only to resolve references such as "they", "this document", "the previous section", or omitted context. Previous assistant responses are context, not evidence.
 
 USER QUESTION:
 {question}
