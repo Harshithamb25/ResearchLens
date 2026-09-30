@@ -3,6 +3,7 @@
 
 import sqlite3
 from pathlib import Path
+from uuid import uuid4
 
 DATABASE_PATH = (
     Path(__file__).resolve().parents[2]
@@ -46,6 +47,8 @@ def initialize_database():
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'active',
+                mode TEXT NOT NULL DEFAULT 'research',
+                is_pinned INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -85,5 +88,78 @@ def initialize_database():
                     project_id,
                     created_at DESC
                 );
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL UNIQUE,
+                title TEXT NOT NULL DEFAULT 'New conversation',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (project_id)
+                    REFERENCES projects(id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                response_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (conversation_id)
+                    REFERENCES conversations(id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS
+                idx_conversation_messages_conversation_created
+                ON conversation_messages(
+                    conversation_id,
+                    created_at ASC,
+                    id ASC
+                );
             """
         )
+
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(projects)"
+            ).fetchall()
+        }
+
+        if "mode" not in columns:
+            connection.execute(
+                "ALTER TABLE projects ADD COLUMN mode "
+                "TEXT NOT NULL DEFAULT 'research'"
+            )
+
+        if "is_pinned" not in columns:
+            connection.execute(
+                "ALTER TABLE projects ADD COLUMN is_pinned "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+
+        projects = connection.execute(
+            "SELECT id, created_at, updated_at FROM projects"
+        ).fetchall()
+
+        for project in projects:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO conversations (
+                    id, project_id, title, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    project["id"],
+                    "New conversation",
+                    project["created_at"],
+                    project["updated_at"],
+                ),
+            )
+
+        connection.commit()
