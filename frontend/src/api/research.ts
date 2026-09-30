@@ -3,7 +3,8 @@ export type AnalysisStatus =
   | "completed"
   | "partial"
   | "failed"
-  | "no_evidence";
+  | "no_evidence"
+  | "not_applicable";
 
 export interface EvidenceItem {
   evidence_id?: number | string;
