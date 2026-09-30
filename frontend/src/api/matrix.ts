@@ -1,10 +1,10 @@
-
 import { getProjectPaperUrl } from "./projects";
 
 export type MatrixFieldKey =
   | "methodology"
   | "datasets"
   | "evaluation_metrics"
+  | "accuracy_percent"
   | "accuracy_results"
   | "advantages"
   | "limitations"
@@ -31,9 +31,11 @@ export interface MatrixRow {
   serial_number: number;
   paper_title: string;
   document_id: string;
+  filename?: string;
   methodology: string;
   datasets: string;
   evaluation_metrics: string;
+  accuracy_percent: string;
   accuracy_results: string;
   advantages: string;
   limitations: string;
@@ -49,14 +51,10 @@ export interface PaperMatrix {
   rows: MatrixRow[];
   paper_count: number;
   note: string;
+  errors?: string[];
 }
 
-function projectEndpoint(
-  projectId: string,
-  suffix: string
-): string {
-  // Reuse the API origin and prefix already configured
-  // by the existing project PDF URL helper.
+function projectEndpoint(projectId: string, suffix: string): string {
   const pdfUrl = new URL(
     getProjectPaperUrl(projectId, "matrix-placeholder"),
     window.location.origin
@@ -105,8 +103,6 @@ export async function getPaperMatrix(
   return (await response.json()) as PaperMatrix;
 }
 
-export function getPaperMatrixCsvUrl(
-  projectId: string
-): string {
+export function getPaperMatrixCsvUrl(projectId: string): string {
   return projectEndpoint(projectId, "paper-matrix.csv");
 }
