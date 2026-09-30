@@ -545,3 +545,123 @@
     transition: none;
   }
 }
+/* =========================================================
+   PHASE 3 — LIBRARY SURFACE
+   ========================================================= */
+
+.project-workspace {
+  box-shadow: none;
+  border-radius: 13px;
+}
+
+.project-mode-switcher {
+  display: inline-flex;
+  gap: 2px;
+  margin: 12px 0 18px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.project-mode-switcher button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.project-mode-switcher button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.project-mode-switcher button.active {
+  color: var(--accent-text);
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgba(40, 44, 70, .08);
+}
+
+.project-library-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-library-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 13px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.project-library-tabs button:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.project-library-tabs button.active {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+}
+
+.project-paper-library {
+  margin-top: 29px;
+  padding-top: 24px;
+}
+
+.project-dropzone {
+  min-height: 205px;
+  border-width: 1px;
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.project-paper-item {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.project-paper-item:hover {
+  box-shadow: none;
+  background: var(--accent-soft);
+}
+
+@media (max-width: 640px) {
+  .project-mode-switcher {
+    width: 100%;
+  }
+
+  .project-mode-switcher button {
+    flex: 1;
+  }
+
+  .project-library-tabs {
+    overflow-x: auto;
+  }
+
+  .project-library-tabs button {
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-mode-switcher button,
+  .project-library-tabs button {
+    transition: none;
+  }
+}
