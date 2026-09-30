@@ -2401,3 +2401,37 @@ button:disabled {
     max-width: 92%;
   }
 }
+
+
+/* Primary question holder */
+.app-shell .welcome .question-form {
+  width: min(100%, 820px);
+  margin: 24px auto 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgba(30, 32, 45, .06);
+}
+
+.app-shell .welcome .question-form textarea {
+  min-height: 58px;
+  padding: 6px 5px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.app-shell .welcome .question-form .form-bottom {
+  margin-top: 6px;
+}
+
+.app-shell .welcome .question-form .submit-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.app-shell.mode-document .welcome .question-form {
+  border-color: #dfe1e7;
+  box-shadow: 0 12px 34px rgba(30, 32, 45, .07);
+}
