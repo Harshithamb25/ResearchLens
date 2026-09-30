@@ -27,6 +27,7 @@ import {
   getProjectPapers,
   getProjects,
   uploadProjectPaper,
+  updateProject,
   type ProjectPaper,
   type ResearchProject,
 } from "./api/projects";
@@ -58,6 +59,8 @@ export default function ProjectWorkspace({
   const [dragging, setDragging] = useState(false);
 
   const [projectName, setProjectName] = useState("");
+  const [creatingMode, setCreatingMode] = useState<"document" | "research">("research");
+  const [modeUpdating, setModeUpdating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
 
@@ -178,9 +181,10 @@ export default function ProjectWorkspace({
     setError("");
 
     try {
-      const created = await createProject(name);
+      const created = await createProject(name, "", creatingMode);
 
       setProjectName("");
+      setCreatingMode("research");
       setShowCreate(false);
       setUploadResults([]);
       setLibraryTab("papers");
@@ -357,6 +361,19 @@ export default function ProjectWorkspace({
             required
           />
 
+          <select
+            value={creatingMode}
+            onChange={(event) =>
+              setCreatingMode(
+                event.target.value as "document" | "research"
+              )
+            }
+            aria-label="Project mode"
+          >
+            <option value="research">Research Lens</option>
+            <option value="document">Document Lens</option>
+          </select>
+
           <button type="submit" disabled={creating}>
             {creating ? "Creating..." : "Create project"}
           </button>
@@ -406,14 +423,109 @@ export default function ProjectWorkspace({
                   <strong>
                     {selectedProject.document_count}
                   </strong>{" "}
-                  indexed paper(s)
+                  indexed document(s)
                 </span>
               </div>
 
-              {selectedProject.document_count < 2 && (
+              <div
+                role="group"
+                aria-label="Project mode"
+                style={{
+                  display: "inline-flex",
+                  gap: 4,
+                  padding: 4,
+                  margin: "12px 0 18px",
+                  border: "1px solid var(--border, #e5e1ee)",
+                  borderRadius: 10,
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={modeUpdating}
+                  aria-pressed={selectedProject.mode === "document"}
+                  onClick={async () => {
+                    if (selectedProject.mode === "document") return;
+                    setModeUpdating(true);
+                    setError("");
+                    try {
+                      const updated = await updateProject(
+                        selectedProject.id,
+                        { mode: "document" }
+                      );
+                      onSelectProject(updated);
+                      await refreshProjects(updated.id);
+                    } catch (caught) {
+                      setError(
+                        caught instanceof Error
+                          ? caught.message
+                          : "Could not switch to Document Lens."
+                      );
+                    } finally {
+                      setModeUpdating(false);
+                    }
+                  }}
+                  style={{
+                    padding: "9px 13px",
+                    border: 0,
+                    borderRadius: 7,
+                    background:
+                      selectedProject.mode === "document"
+                        ? "var(--surface-strong, #f1eef8)"
+                        : "transparent",
+                    cursor: modeUpdating ? "wait" : "pointer",
+                    fontWeight:
+                      selectedProject.mode === "document" ? 700 : 500,
+                  }}
+                >
+                  Document Lens
+                </button>
+
+                <button
+                  type="button"
+                  disabled={modeUpdating}
+                  aria-pressed={selectedProject.mode === "research"}
+                  onClick={async () => {
+                    if (selectedProject.mode === "research") return;
+                    setModeUpdating(true);
+                    setError("");
+                    try {
+                      const updated = await updateProject(
+                        selectedProject.id,
+                        { mode: "research" }
+                      );
+                      onSelectProject(updated);
+                      await refreshProjects(updated.id);
+                    } catch (caught) {
+                      setError(
+                        caught instanceof Error
+                          ? caught.message
+                          : "Could not switch to Research Lens."
+                      );
+                    } finally {
+                      setModeUpdating(false);
+                    }
+                  }}
+                  style={{
+                    padding: "9px 13px",
+                    border: 0,
+                    borderRadius: 7,
+                    background:
+                      selectedProject.mode === "research"
+                        ? "var(--surface-strong, #f1eef8)"
+                        : "transparent",
+                    cursor: modeUpdating ? "wait" : "pointer",
+                    fontWeight:
+                      selectedProject.mode === "research" ? 700 : 500,
+                  }}
+                >
+                  Research Lens
+                </button>
+              </div>
+
+              {selectedProject.mode === "research" && selectedProject.document_count < 2 && (
                 <p className="project-hint">
-                  Research Mode requires at least
-                  two indexed papers.
+                  Research Lens requires at least
+                  two indexed papers. Document Lens can work with one or more.
                 </p>
               )}
 
