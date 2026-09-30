@@ -643,8 +643,19 @@ def query_project_document(
 
     try:
         conversation_context = get_conversation_context(project_id)
+        recent_user_questions = [
+            item["content"]
+            for item in conversation_context
+            if item.get("role") == "user"
+            and isinstance(item.get("content"), str)
+            and item["content"].strip()
+        ][-3:]
+        retrieval_query = "\n".join(
+            [*recent_user_questions, question]
+        )
+
         results = search(
-            question,
+            retrieval_query,
             top_k=request.retrieval_k,
             project_id=project_id,
         )
