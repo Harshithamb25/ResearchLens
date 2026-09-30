@@ -433,3 +433,6 @@ def matrix_to_csv(matrix: dict[str, Any]) -> str:
     for row in matrix.get("rows", []):
         writer.writerow(row.get(key, "") for key, _ in MATRIX_COLUMNS)
     return output.getvalue()
+
+
+# Backward-compatible export name used by the research history router.\ndef paper_matrix_to_csv(matrix: dict[str, Any]) -> str:\n    return matrix_to_csv(matrix)\n
