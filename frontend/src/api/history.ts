@@ -157,3 +157,50 @@ export async function deleteResearchSession(
     );
   }
 }
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  response: QueryResponse | null;
+  created_at: string;
+}
+
+export interface ProjectConversation {
+  id: string;
+  project_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ConversationMessage[];
+}
+
+export async function getProjectConversation(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<ProjectConversation> {
+  const response = await fetch(
+    API_URL + "/projects/" + encodeURIComponent(projectId) + "/conversation",
+    { signal }
+  );
+
+  if (!response.ok) {
+    throw await readApiError(
+      response,
+      "Could not load the project conversation"
+    );
+  }
+
+  const data: {
+    success: boolean;
+    conversation: ProjectConversation;
+  } = await response.json();
+
+  if (!data.success || !data.conversation) {
+    throw new Error(
+      "The server returned an invalid project conversation."
+    );
+  }
+
+  return data.conversation;
+}
