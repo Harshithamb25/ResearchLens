@@ -277,7 +277,7 @@ def update_project(project_id: str, request: UpdateProjectRequest):
 
     with get_connection() as connection:
         connection.execute(
-            f"UPDATE projects SET {", ".join(updates)} WHERE id = ?",
+            "UPDATE projects SET " + ", ".join(updates) + " WHERE id = ?",
             values,
         )
         connection.commit()
