@@ -31,6 +31,7 @@ const FIELD_COLUMNS: { key: MatrixFieldKey; label: string }[] = [
   { key: "methodology", label: "Methodology / Algorithm" },
   { key: "datasets", label: "Dataset(s)" },
   { key: "evaluation_metrics", label: "Evaluation Metrics" },
+  { key: "accuracy_percent", label: "Accuracy (%)" },
   { key: "accuracy_results", label: "Results / Findings" },
   { key: "advantages", label: "Advantages" },
   { key: "limitations", label: "Limitations" },
@@ -46,10 +47,7 @@ interface Selection {
 const MAX_VISIBLE_FINDINGS = 3;
 
 function normalizeFinding(value: string): string {
-  return value
-    .replace(/\s+/g, " ")
-    .replace(/^[-•·\s]+/, "")
-    .trim();
+  return value.replace(/\s+/g, " ").replace(/^[-•·\s]+/, "").trim();
 }
 
 function visibleEntries(entries: MatrixEntry[]): MatrixEntry[] {
@@ -131,14 +129,39 @@ export default function EvidenceMatrix({
 
     if (!entries.length) {
       return (
-        <span className="matrix-unavailable">
-          Not identified in evidence
+        <span
+          className={
+            field === "accuracy_percent"
+              ? "matrix-unavailable matrix-accuracy-empty"
+              : "matrix-unavailable"
+          }
+        >
+          {field === "accuracy_percent" ? "Not reported" : "Not identified"}
         </span>
       );
     }
 
     const visible = visibleEntries(entries);
     const remaining = Math.max(entries.length - visible.length, 0);
+
+    if (field === "accuracy_percent") {
+      return (
+        <button
+          type="button"
+          className="matrix-cell-button matrix-accuracy-button"
+          onClick={() => setSelection({ row, field, label })}
+          title="Inspect the source supporting the reported accuracy"
+        >
+          <span className="matrix-accuracy-value">
+            {normalizeFinding(entries[0].value)}
+          </span>
+          <span className="matrix-cell-source">
+            <BookOpen size={13} />
+            Source · Page {entries[0].source.page}
+          </span>
+        </button>
+      );
+    }
 
     return (
       <button
@@ -148,7 +171,7 @@ export default function EvidenceMatrix({
         title={
           "Inspect " +
           entries.length +
-          " source finding" +
+          " analytical finding" +
           (entries.length === 1 ? "" : "s")
         }
       >
@@ -172,7 +195,7 @@ export default function EvidenceMatrix({
 
         <span className="matrix-cell-source">
           <BookOpen size={13} />
-          {entries.length} source finding
+          {entries.length} analytical finding
           {entries.length === 1 ? "" : "s"}
           {remaining > 0 ? " · +" + remaining + " more" : ""}
         </span>
@@ -198,7 +221,7 @@ export default function EvidenceMatrix({
         <div className="matrix-source-heading">
           <div>
             <span className="matrix-source-index">
-              Finding {index + 1}
+              Analytical finding {index + 1}
             </span>
             <strong>{normalizeFinding(entry.value)}</strong>
           </div>
@@ -206,7 +229,7 @@ export default function EvidenceMatrix({
         </div>
 
         <div className="matrix-source-passage">
-          <span>Original passage</span>
+          <span>Original passage for verification</span>
           <p>{entry.evidence_text}</p>
         </div>
 
@@ -234,8 +257,8 @@ export default function EvidenceMatrix({
           <span className="section-caption">PAPER-WISE COMPARISON</span>
           <h3>Cross-Paper Evidence Matrix</h3>
           <p>
-            A compact view of complete evidence findings, with every item
-            traceable to its original PDF page.
+            Concise analytical findings generated from the uploaded papers,
+            with every finding traceable to its supporting page.
           </p>
         </div>
 
@@ -265,9 +288,10 @@ export default function EvidenceMatrix({
       {loading ? (
         <div className="matrix-state" role="status">
           <LoaderCircle size={23} className="spinning" />
-          <strong>Extracting evidence from your papers</strong>
+          <strong>Analyzing your papers</strong>
           <p>
-            Reading the original PDFs and organizing page-linked findings.
+            ResearchLens is reading the PDFs and building concise,
+            field-specific findings.
           </p>
         </div>
       ) : error ? (
@@ -288,17 +312,17 @@ export default function EvidenceMatrix({
             <FileSpreadsheet size={19} />
             <strong>{matrix.paper_count} papers</strong>
             <span>·</span>
-            <span>7 evidence dimensions</span>
+            <span>8 comparison dimensions</span>
             <span>·</span>
-            <span>Page-linked findings</span>
+            <span>AI-paraphrased + page-linked</span>
           </div>
 
           <div className="matrix-reading-guide">
             <span className="matrix-reading-dot" />
             <span>
-              Each cell shows up to {MAX_VISIBLE_FINDINGS} complete findings.
-              Select a cell to inspect every extracted finding and its original
-              passage.
+              The table shows short analytical summaries, not copied PDF
+              sentences. Select any cell to inspect the supporting passage.
+              Accuracy (%) contains only explicitly reported percentage accuracy.
             </span>
           </div>
 
@@ -349,6 +373,13 @@ export default function EvidenceMatrix({
             </table>
           </div>
 
+          {matrix.errors?.length ? (
+            <p className="matrix-disclaimer">
+              Some papers could not be fully analyzed. They are shown as
+              unavailable rather than guessed.
+            </p>
+          ) : null}
+
           <p className="matrix-disclaimer">{matrix.note}</p>
         </>
       ) : null}
@@ -388,9 +419,9 @@ export default function EvidenceMatrix({
               )}
 
               <p className="matrix-disclaimer">
-                Findings are complete source sentences selected from the
-                extracted PDF text. The original passage and PDF page are
-                preserved below for verification.
+                The highlighted text is the original source passage retained
+                only for verification. The matrix finding above is a
+                paraphrased analytical summary.
               </p>
             </div>
           </section>
