@@ -1123,3 +1123,184 @@
     transition: none;
   }
 }
+/* =========================================================
+   PHASE 3 — RESEARCH READING SURFACE
+   ========================================================= */
+
+.research-results {
+  width: min(100%, 900px);
+  padding-bottom: 76px;
+}
+
+.result-heading {
+  margin-bottom: 22px;
+}
+
+.result-heading h1 {
+  font-size: clamp(24px, 3vw, 33px);
+  letter-spacing: -1.1px;
+  line-height: 1.25;
+}
+
+.audit-banner {
+  border-radius: 11px;
+  box-shadow: none;
+}
+
+.answer-card {
+  padding: clamp(20px, 3vw, 28px);
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+.answer-text,
+.research-markdown {
+  font-size: 13px;
+  line-height: 1.88;
+}
+
+.research-markdown h2 {
+  margin-top: 28px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.research-markdown h3 {
+  margin-top: 22px;
+}
+
+.research-markdown .synthesis-citation-link {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  text-decoration: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.research-markdown .synthesis-citation-link:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.result-summary {
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.result-summary > div {
+  padding: 15px;
+  border-radius: 9px;
+  box-shadow: none;
+  background: var(--bg);
+}
+
+.summary-number {
+  font-size: 24px;
+}
+
+.themes-list {
+  gap: 12px;
+}
+
+.theme-card {
+  padding: 19px;
+  border-radius: 11px;
+  box-shadow: none;
+}
+
+.theme-card-cross-paper {
+  border-left-width: 3px;
+}
+
+.theme-card-header {
+  margin-bottom: 13px;
+}
+
+.theme-card-header h3 {
+  font-size: 15px;
+}
+
+.theme-finding {
+  padding: 13px;
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.theme-finding p,
+.comparison-explanation {
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.theme-comparison {
+  margin-bottom: 14px;
+  padding: 17px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.comparison-relationship-label {
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.comparison-footer {
+  margin-top: 15px;
+  border-radius: 8px;
+}
+
+.evidence-list {
+  gap: 9px;
+}
+
+.evidence-card {
+  padding: 15px;
+  border-radius: 10px;
+  box-shadow: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.evidence-card:hover,
+.evidence-card.selected {
+  box-shadow: none;
+  border-color: var(--accent);
+}
+
+.selected-passage {
+  border-radius: 9px;
+  box-shadow: none;
+}
+
+.inspector-claim {
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.citation-panel {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.citation-metrics span {
+  border-radius: 7px;
+}
+
+.source-pdf-link {
+  border-color: var(--border);
+  border-radius: 8px;
+}
+
+.analysis-loading,
+.analysis-error {
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .research-markdown .synthesis-citation-link {
+    transition: none;
+  }
+}
