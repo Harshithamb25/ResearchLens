@@ -125,7 +125,8 @@ export async function getProjects(
  */
 export async function createProject(
   name: string,
-  description = ""
+  description = "",
+  mode: "document" | "research" = "research"
 ): Promise<ResearchProject> {
   const response = await fetch(
     `${API_URL}/projects`,
@@ -137,6 +138,7 @@ export async function createProject(
       body: JSON.stringify({
         name: name.trim(),
         description: description.trim(),
+        mode,
       }),
     }
   );
