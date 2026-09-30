@@ -1502,14 +1502,19 @@ export default function App() {
               loading ||
               !question.trim() ||
               !selectedProject ||
-              selectedProject.document_count < 2
+              (selectedProject.mode === "research" &&
+                selectedProject.document_count < 2)
             }
-            aria-label="Analyze research question"
+            aria-label={
+              selectedProject?.mode === "document"
+                ? "Ask document question"
+                : "Analyze research question"
+            }
             title={
-              selectedProject &&
+              selectedProject?.mode === "research" &&
               selectedProject.document_count < 2
                 ? "Upload at least two indexed papers"
-                : "Analyze research question"
+                : "Send question"
             }
           >
             {loading ? (
@@ -1924,10 +1929,6 @@ export default function App() {
           </div>
 
 
-
-<div className="wb-topbar-search">
-  {renderResearchQuestionForm(true)}
-</div>
           <div className="topbar-actions">
             <button
               type="button"
@@ -2369,6 +2370,7 @@ export default function App() {
                           Synthesis
                         </button>
 
+                        {selectedProject?.mode === "research" && (
                         <button
                           type="button"
                           role="tab"
@@ -2393,6 +2395,7 @@ export default function App() {
                           />
                           Themes & Comparisons
                         </button>
+                        )}
 
                         <button
                           type="button"
@@ -2429,7 +2432,7 @@ export default function App() {
                           <div className="result-section-title">
                             <Sparkles size={19} />
                             <h2>
-                              Research synthesis
+                              {selectedProject?.mode === "document" ? "Document answer" : "Research synthesis"}
                             </h2>
                           </div>
 
@@ -2465,7 +2468,7 @@ export default function App() {
                               </span>
 
                               <span className="summary-label">
-                                Source papers
+                                {selectedProject?.mode === "document" ? "Source documents" : "Source papers"}
                               </span>
                             </div>
 
@@ -2590,6 +2593,12 @@ export default function App() {
                   )}
                 </div>
               )}
+            {submittedQuestion && (
+              <div className="wb-bottom-composer">
+                {renderResearchQuestionForm(true)}
+              </div>
+            )}
+
             </main>
 
             {/* EVIDENCE INSPECTOR */}
@@ -2673,6 +2682,7 @@ export default function App() {
                       : ""}
                   </button>
 
+                  {selectedProject?.mode === "research" && (
                   <button
                     type="button"
                     role="tab"
@@ -2694,6 +2704,7 @@ export default function App() {
                   >
                     Comparisons
                   </button>
+                  )}
                 </div>
 
                 <div className="inspector-body">
