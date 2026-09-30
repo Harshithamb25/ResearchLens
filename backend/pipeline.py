@@ -69,6 +69,7 @@ def process_query(
     rerank_k=5,
     claim_threshold=0.75,
     project_id=None,
+    conversation_context=None,
 ):
     """Process a research query; project API always supplies project_id."""
     if not question or not question.strip():
@@ -96,9 +97,14 @@ def process_query(
                 answer_context,
                 theme_comparisons=comparisons,
                 analysis_status=analysis_status,
+                conversation_context=conversation_context,
             )
         else:
-            answer = generate_answer(question, answer_context)
+            answer = generate_answer(
+                question,
+                answer_context,
+                conversation_context=conversation_context,
+            )
         if answer is not None:
             citation_validation = validate_answer_citations(answer, answer_context)
     return {
