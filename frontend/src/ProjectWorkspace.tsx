@@ -425,7 +425,7 @@ export default function ProjectWorkspace({
                 </span>
               </div>
 
-/div>
+</div>
 
               {selectedProject.mode === "research" && selectedProject.document_count < 2 && (
                 <p className="project-hint">
