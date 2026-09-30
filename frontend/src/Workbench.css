@@ -1697,6 +1697,34 @@ button:disabled {
 }
 
 @media (max-width: 650px) {
+  .wb-bottom-composer {
+    bottom: 8px;
+    margin-top: 12px;
+    padding: 0;
+  }
+
+  .wb-bottom-composer .question-form {
+    padding: 11px 12px;
+    border-radius: 11px;
+  }
+
+  .wb-bottom-composer .wb-compact-question textarea {
+    min-height: 42px !important;
+    height: 42px !important;
+    font-size: 12px;
+  }
+
+  .conversation-message {
+    max-width: 94%;
+  }
+
+  .analysis-loading,
+  .analysis-error {
+    margin-top: 35px;
+    padding: 24px 20px;
+  }
+
+
   .app-shell .sidebar {
     position: fixed;
     top: 0;
