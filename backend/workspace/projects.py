@@ -213,6 +213,8 @@ def get_project(project_id: str):
                 p.name,
                 p.description,
                 p.status,
+                p.mode,
+                p.is_pinned,
                 p.created_at,
                 p.updated_at,
                 COUNT(d.id) AS document_count
@@ -231,7 +233,7 @@ def get_project(project_id: str):
             detail="Research project not found.",
         )
 
-    return dict(row)
+    return {**dict(row), "is_pinned": bool(row["is_pinned"])}
 
 
 # --------------------------------------------------
