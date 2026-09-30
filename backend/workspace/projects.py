@@ -24,6 +24,7 @@ from backend.pipeline import process_query
 from backend.retrieval.retriever import search
 from backend.retrieval.reranker import rerank
 from backend.generation.llm_service import generate_document_answer
+from backend.workspace.history import get_conversation_context
 from backend.workspace.database import (
     get_connection,
     initialize_database,
@@ -645,6 +646,7 @@ def query_project_document(
             question,
             top_k=request.retrieval_k,
             project_id=project_id,
+            conversation_context=conversation_context,
         )
 
         documents = (results.get("documents") or [[]])[0]
@@ -692,6 +694,7 @@ def query_project_document(
         answer = generate_document_answer(
             question,
             evidence,
+            conversation_context=conversation_context,
         )
 
         response_data = {
@@ -795,6 +798,7 @@ def query_project(
         )
 
     try:
+        conversation_context = get_conversation_context(project_id)
         result = process_query(
             question=question,
             retrieval_k=request.retrieval_k,
