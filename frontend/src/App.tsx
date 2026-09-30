@@ -716,6 +716,27 @@ export default function App() {
       .then((conversation) => {
         if (!controller.signal.aborted) {
           setConversationMessages(conversation.messages);
+
+          const lastUser = [...conversation.messages]
+            .reverse()
+            .find((message) => message.role === "user");
+          const lastAssistant = [...conversation.messages]
+            .reverse()
+            .find(
+              (message) =>
+                message.role === "assistant" &&
+                message.response
+            );
+
+          if (
+            lastUser &&
+            lastAssistant?.response
+          ) {
+            setSubmittedQuestion(lastUser.content);
+            setQuestion("");
+            setResponse(lastAssistant.response);
+            setView("research");
+          }
         }
       })
       .catch(() => {
