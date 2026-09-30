@@ -37,7 +37,7 @@ import {
 
 import ProjectWorkspace from "./ProjectWorkspace";
 import ResearchHistory from "./ResearchHistory";
-import type { SavedResearchSession } from "./api/history";
+import { getProjectConversation, type SavedResearchSession, type ConversationMessage } from "./api/history";
 
 import {
   getProjects,
@@ -358,6 +358,11 @@ export default function App() {
 
   const [selectedProject, setSelectedProject] =
     useState<ResearchProject | null>(null);
+
+  const [conversationMessages, setConversationMessages] =
+    useState<ConversationMessage[]>([]);
+  const [conversationLoading, setConversationLoading] =
+    useState(false);
 
   const [projectPapers, setProjectPapers] =
     useState<PaperLookup>({
@@ -695,6 +700,38 @@ export default function App() {
     );
   }
 
+  useEffect(() => {
+    const projectId = selectedProject?.id;
+
+    if (!projectId) {
+      setConversationMessages([]);
+      setConversationLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setConversationLoading(true);
+
+    getProjectConversation(projectId, controller.signal)
+      .then((conversation) => {
+        if (!controller.signal.aborted) {
+          setConversationMessages(conversation.messages);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setConversationMessages([]);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setConversationLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [selectedProject?.id]);
+
   /* --------------------------------------------------------
      RESEARCH ACTIONS
      -------------------------------------------------------- */
@@ -755,6 +792,23 @@ export default function App() {
       if (controller.signal.aborted) return;
 
       setResponse(nextResponse);
+      setConversationMessages((messages) => [
+        ...messages,
+        {
+          id: `${Date.now()}-user`,
+          role: "user",
+          content: trimmed,
+          response: null,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: `${Date.now()}-assistant`,
+          role: "assistant",
+          content: nextResponse.data.answer ?? "",
+          response: nextResponse,
+          created_at: new Date().toISOString(),
+        },
+      ]);
       refreshCitationPapers();
 
       setHistoryVersion(
@@ -1303,8 +1357,12 @@ export default function App() {
           }
           placeholder={
             compact
-              ? "Ask another research question..."
-              : "What would you like to investigate?"
+              ? selectedProject?.mode === "document"
+                ? "Ask another document question..."
+                : "Ask another research question..."
+              : selectedProject?.mode === "document"
+                ? "What would you like to understand from these documents?"
+                : "What would you like to investigate?"
           }
           value={question}
           onChange={(event) =>
@@ -1318,8 +1376,8 @@ export default function App() {
             <BookOpen size={15} />
 
             {selectedProject
-              ? `${selectedProject.document_count} papers · ${selectedProject.name}`
-              : "Select a research project"}
+              ? `${selectedProject.document_count} ${selectedProject.mode === "document" ? "documents" : "papers"} · ${selectedProject.name}`
+              : "Select a project"}
           </span>
 
           <button
@@ -1758,7 +1816,7 @@ export default function App() {
 
                         <p>
                           Create a project and upload
-                          at least two PDFs.
+                          PDFs to begin.
                         </p>
 
                         <button
@@ -1775,7 +1833,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {selectedProject &&
+                  {selectedProject?.mode === "research" &&
                     selectedProject.document_count <
                       2 && (
                     <div className="wb-setup-notice">
@@ -1787,7 +1845,7 @@ export default function App() {
                         </strong>
 
                         <p>
-                          Research Mode requires at
+                          Research Lens requires at
                           least two indexed PDFs.
                         </p>
 
