@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pymupdf
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from backend.ingestion.pdf_loader import extract_text_from_pdf
@@ -26,6 +26,7 @@ from backend.workspace.database import (
     initialize_database,
 )
 from backend.workspace.history import save_research_session
+from backend.workspace.paper_matrix import build_paper_matrix, matrix_to_csv
 
 
 logger = logging.getLogger(__name__)
