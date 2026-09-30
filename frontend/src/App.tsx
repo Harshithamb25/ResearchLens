@@ -1639,52 +1639,46 @@ export default function App() {
         >
           <button
             type="button"
-            className={`nav-item ${
-              view === "research" ? "active" : ""
-            }`}
+            className={`nav-item ${view === "research" ? "active" : ""}`}
             onClick={() => {
               setView("research");
               setSidebarOpen(false);
             }}
           >
             <Search size={19} />
-            Research
-
+            Conversation
             {view === "research" && (
-              <ChevronRight
-                size={16}
-                className="nav-end"
-              />
+              <ChevronRight size={16} className="nav-end" />
             )}
           </button>
 
           <button
             type="button"
-            className={`nav-item ${
-              view === "library" ? "active" : ""
-            }`}
+            className={`nav-item ${view === "library" ? "active" : ""}`}
             onClick={() => {
               setView("library");
               setSidebarOpen(false);
             }}
           >
             <Library size={19} />
-            Paper library
+            {selectedProject?.mode === "document"
+              ? "Document library"
+              : "Paper library"}
           </button>
 
-          <button
-            type="button"
-            className={`nav-item ${
-              view === "history" ? "active" : ""
-            }`}
-            onClick={() => {
-              setView("history");
-              setSidebarOpen(false);
-            }}
-          >
-            <History size={19} />
-            Research history
-          </button>
+          {selectedProject?.mode === "research" && (
+            <button
+              type="button"
+              className={`nav-item ${view === "history" ? "active" : ""}`}
+              onClick={() => {
+                setView("history");
+                setSidebarOpen(false);
+              }}
+            >
+              <History size={19} />
+              Research history
+            </button>
+          )}
         </nav>
 
         {/* PROJECTS */}
@@ -1869,14 +1863,23 @@ export default function App() {
         <div className="sidebar-spacer" />
 
         <div className="sidebar-note">
-          <ShieldCheck size={19} />
+          {selectedProject?.mode === "document" ? (
+            <FileSearch size={19} />
+          ) : (
+            <ShieldCheck size={19} />
+          )}
 
           <div>
-            <strong>Evidence first</strong>
+            <strong>
+              {selectedProject?.mode === "document"
+                ? "Grounded answers"
+                : "Evidence first"}
+            </strong>
 
             <p>
-              Inspect the sources behind
-              every research conclusion.
+              {selectedProject?.mode === "document"
+                ? "Answers stay anchored to your uploaded documents."
+                : "Inspect the sources behind research conclusions."}
             </p>
           </div>
         </div>
@@ -2068,20 +2071,29 @@ export default function App() {
                   )}
                   <div className="eyebrow">
                     <Sparkles size={15} />
-                    YOUR RESEARCH, UNDERSTOOD
+                    {selectedProject?.mode === "document"
+                      ? "YOUR DOCUMENTS, UNDERSTOOD"
+                      : "YOUR RESEARCH, UNDERSTOOD"}
                   </div>
 
                   <h1>
-                    Research with{" "}
-                    <span>clarity.</span>
+                    {selectedProject?.mode === "document" ? (
+                      <>
+                        Understand your{" "}
+                        <span>documents.</span>
+                      </>
+                    ) : (
+                      <>
+                        Explore your{" "}
+                        <span>research.</span>
+                      </>
+                    )}
                   </h1>
 
                   <p className="welcome-description">
-                    Ask questions across your
-                    research papers. Explore the
-                    evidence, compare findings
-                    and see where uncertainty
-                    remains.
+                    {selectedProject?.mode === "document"
+                      ? "Ask questions about the uploaded PDFs and keep the answers grounded in their content."
+                      : "Ask questions across your research papers, compare findings and inspect the evidence behind each conclusion."}
                   </p>
 
 
@@ -2695,11 +2707,9 @@ export default function App() {
                   )}
                 </div>
               )}
-            {submittedQuestion && (
-              <div className="wb-bottom-composer">
-                {renderResearchQuestionForm(true)}
-              </div>
-            )}
+            <div className="wb-bottom-composer">
+              {renderResearchQuestionForm(Boolean(submittedQuestion))}
+            </div>
 
             </main>
 
