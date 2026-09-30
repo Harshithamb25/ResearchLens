@@ -642,11 +642,11 @@ def query_project_document(
         )
 
     try:
+        conversation_context = get_conversation_context(project_id)
         results = search(
             question,
             top_k=request.retrieval_k,
             project_id=project_id,
-            conversation_context=conversation_context,
         )
 
         documents = (results.get("documents") or [[]])[0]
@@ -805,6 +805,7 @@ def query_project(
             rerank_k=request.rerank_k,
             claim_threshold=request.claim_threshold,
             project_id=project_id,
+            conversation_context=conversation_context,
         )
 
     except ValueError as error:
