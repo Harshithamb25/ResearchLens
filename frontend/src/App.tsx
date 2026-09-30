@@ -2361,91 +2361,76 @@ export default function App() {
                         </section>
                       )}
 
-                      <section className="wb-response-card">
-                        <span className="section-caption">
-                          RESEARCH RESPONSE
-                        </span>
-
-                        <h1>
-                          {submittedQuestion}
-                        </h1>
-
-                        <div className="wb-response-overview">
-                          {result.answer ? (
-                            <ResearchMarkdown
-                              content={linkedAnswer}
-                            />
-                          ) : (
-                            <p>
-                              No synthesis was
-                              generated for this
-                              question.
-                            </p>
-                          )}
+                      <section className="wb-conversation-turn">
+                        <div className="wb-chat-message wb-chat-user">
+                          <span className="wb-chat-role">You</span>
+                          <p>{submittedQuestion}</p>
                         </div>
 
-                        {!result.audit_completed &&
-                          result.answer && (
-                          <div className="answer-caution">
-                            <AlertCircle size={16} />
-
-                            <span>
-                              The claim-level audit
-                              was not fully completed.
-                              Review the original
-                              evidence before relying
-                              on the synthesis.
+                        <div className="wb-chat-message wb-chat-assistant">
+                          <div className="wb-chat-assistant-heading">
+                            <span className="wb-chat-role">
+                              {selectedProject?.mode === "document"
+                                ? "Document Lens"
+                                : "Research Lens"}
                             </span>
-                          </div>
-                        )}
-
-                        <div className="wb-metric-grid">
-                          <div className="wb-metric-card">
-                            <ShieldCheck size={20} />
-
-                            <strong>
-                              {
-                                statusLabels[
-                                  result
-                                    .analysis_status
-                                ]
-                              }
-                            </strong>
-
-                            <span>
-                              Claim audit
+                            <span className="wb-chat-status">
+                              <CheckCircle2 size={14} />
+                              Grounded response
                             </span>
                           </div>
 
-                          <div className="wb-metric-card">
-                            <CheckCircle2 size={20} />
-
-                            <strong>
-                              {citationValidation
-                                ? `${citationValidation.valid_citation_count} of ${citationValidation.checked_citation_count}`
-                                : "Not reported"}
-                            </strong>
-
-                            <span>
-                              Valid citations
-                            </span>
+                          <div className="wb-chat-answer">
+                            {result.answer ? (
+                              <ResearchMarkdown content={linkedAnswer} />
+                            ) : (
+                              <p>No answer was generated for this question.</p>
+                            )}
                           </div>
 
-                          <div className="wb-metric-card">
-                            <BookOpen size={20} />
+                          {!result.audit_completed &&
+                            selectedProject?.mode === "research" &&
+                            result.answer && (
+                            <div className="answer-caution">
+                              <AlertCircle size={16} />
+                              <span>
+                                The claim-level audit was not fully completed.
+                                Review the original evidence before relying on
+                                the synthesis.
+                              </span>
+                            </div>
+                          )}
 
-                            <strong>
-                              {evidence.length}
-                              {" "}passages
-                            </strong>
-
-                            <span>
-                              {sourceCount}
-                              {" "}source
-                              {sourceCount === 1
-                                ? " paper"
-                                : " papers"}
-                            </span>
+                          <div className="wb-chat-meta">
+                            {selectedProject?.mode === "document" ? (
+                              <>
+                                <span>
+                                  <BookOpen size={15} />
+                                  {evidence.length} evidence passages
+                                </span>
+                                <span>
+                                  <FileSearch size={15} />
+                                  {sourceCount} source {sourceCount === 1 ? "document" : "documents"}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span>
+                                  <ShieldCheck size={15} />
+                                  {statusLabels[result.analysis_status]}
+                                </span>
+                                <span>
+                                  <CheckCircle2 size={15} />
+                                  {citationValidation
+                                    ? `${citationValidation.valid_citation_count} of ${citationValidation.checked_citation_count} valid citations`
+                                    : "Citation validation not reported"}
+                                </span>
+                                <span>
+                                  <BookOpen size={15} />
+                                  {evidence.length} passages · {sourceCount} source {sourceCount === 1 ? "paper" : "papers"}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </section>
@@ -2477,7 +2462,7 @@ export default function App() {
                           }
                         >
                           <Sparkles size={17} />
-                          Synthesis
+                          {selectedProject?.mode === "document" ? "Answer" : "Synthesis"}
                         </button>
 
                         {selectedProject?.mode === "research" && (
@@ -2527,7 +2512,7 @@ export default function App() {
                           }
                         >
                           <BookOpen size={17} />
-                          Evidence
+                          {selectedProject?.mode === "document" ? "Sources" : "Evidence"}
                           <span className="wb-tab-count">
                             {evidence.length}
                           </span>
