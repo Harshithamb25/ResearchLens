@@ -333,7 +333,7 @@ def _accuracy(
 
 
 def _fallback_title(filename: str) -> str:
-    return Path(filename).stem.replace("_", " ").strip()
+    return "Title not identified in extracted evidence"
 
 
 def _scan(
