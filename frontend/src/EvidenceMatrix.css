@@ -81,6 +81,28 @@
   color: #7565d5;
 }
 
+.matrix-reading-guide {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--border, #e5e1ee);
+  border-radius: 10px;
+  color: var(--text-secondary, #77758a);
+  background: var(--surface, #fff);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.matrix-reading-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #7565d5;
+}
+
 .matrix-scroll-hint {
   margin: 12px 0;
 }
@@ -103,21 +125,25 @@
 }
 
 .matrix-table th {
-  min-width: 190px;
+  min-width: 220px;
   padding: 15px;
   border-bottom: 1px solid var(--border, #e5e1ee);
   background: var(--surface, #fff);
   font-weight: 700;
   line-height: 1.45;
   vertical-align: top;
+  white-space: normal;
 }
 
 .matrix-table td {
-  max-width: 290px;
+  width: 330px;
+  min-width: 300px;
+  max-width: 360px;
   padding: 13px 15px;
   border-bottom: 1px solid var(--border, #e5e1ee);
   vertical-align: top;
   line-height: 1.55;
+  white-space: normal;
 }
 
 .matrix-table tr:last-child td {
@@ -181,15 +207,56 @@
   text-align: left;
 }
 
-.matrix-cell-button:hover .matrix-finding { color:#6455c4; }
+.matrix-cell-button:hover .matrix-finding {
+  color: #6455c4;
+}
 
-.matrix-findings { display:flex; flex-direction:column; gap:8px; }
+.matrix-findings {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
 
-.matrix-finding { display:grid; grid-template-columns:18px minmax(0,1fr); gap:7px; align-items:start; color:var(--text-primary,#29273a); font-size:12px; line-height:1.5; }
+.matrix-finding {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  width: 100%;
+  align-items: start;
+  color: var(--text-primary, #29273a);
+  font-size: 12px;
+  line-height: 1.55;
+}
 
-.matrix-finding-marker { display:inline-flex; width:17px; height:17px; align-items:center; justify-content:center; margin-top:1px; border:1px solid var(--border,#e5e1ee); border-radius:50%; color:var(--text-secondary,#77758a); font-size:9px; font-weight:750; }
+.matrix-finding > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
 
-.matrix-source-inspect { display:inline-flex; align-items:center; gap:5px; color:#7868da; font-size:11px; font-weight:600; }
+.matrix-finding-marker {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+  border: 1px solid var(--border, #e5e1ee);
+  border-radius: 50%;
+  color: var(--text-secondary, #77758a);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.matrix-source-inspect {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #7868da;
+  font-size: 11px;
+  font-weight: 600;
+}
 
 .matrix-cell-source {
   display: inline-flex;
@@ -298,6 +365,17 @@
   gap: 12px;
 }
 
+.matrix-source-heading > div {
+  min-width: 0;
+}
+
+.matrix-source-heading strong {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .matrix-source-heading span {
   flex-shrink: 0;
   color: #7868da;
@@ -325,5 +403,10 @@
   .matrix-table th:nth-child(2),
   .matrix-table td:nth-child(2) {
     min-width: 170px;
+  }
+
+  .matrix-table td {
+    min-width: 280px;
+    width: 300px;
   }
 }
