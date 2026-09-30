@@ -407,7 +407,7 @@ export default function ProjectWorkspace({
           >
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name} ({project.document_count} papers)
+                {project.name} ({project.document_count} {project.mode === "document" ? "documents" : "papers"})
               </option>
             ))}
           </select>
@@ -473,7 +473,9 @@ export default function ProjectWorkspace({
                   onClick={() => inputRef.current?.click()}
                 >
                   {uploading
-                    ? "Indexing papers..."
+                    ? selectedProject.mode === "document"
+                      ? "Indexing documents..."
+                      : "Indexing papers..."
                     : "Browse PDFs"}
                 </button>
               </div>
@@ -538,7 +540,7 @@ export default function ProjectWorkspace({
                     className={libraryTab === "papers" ? "active" : ""}
                   >
                     <FileText size={17} />
-                    Indexed Papers
+                    {selectedProject.mode === "document" ? "Indexed Documents" : "Indexed Papers"}
                   </button>
 
                   {selectedProject.mode === "research" && (
