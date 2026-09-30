@@ -22,6 +22,11 @@ import {
   Library,
   LoaderCircle,
   Menu,
+  MoreHorizontal,
+  Pencil,
+  Pin,
+  PinOff,
+  Trash2,
   Moon,
   PanelRightClose,
   PanelRightOpen,
@@ -43,6 +48,8 @@ import {
   getProjects,
   getProjectPapers,
   getProjectPaperUrl,
+  updateProject,
+  deleteProject,
   type ProjectPaper,
   type ResearchProject,
 } from "./api/projects";
@@ -352,6 +359,9 @@ export default function App() {
 
   const [projectsLoading, setProjectsLoading] =
     useState(true);
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [editingProjectName, setEditingProjectName] = useState("");
 
   const [projectsError, setProjectsError] =
     useState<string | null>(null);
@@ -873,6 +883,90 @@ export default function App() {
     setInspectorTab("overview");
     setView("research");
     setSidebarOpen(false);
+  }
+
+  async function saveProjectName(project: ResearchProject) {
+    const name = editingProjectName.trim();
+    if (!name || name === project.name) {
+      setEditingProjectId(null);
+      return;
+    }
+
+    try {
+      const updated = await updateProject(project.id, { name });
+      setProjects((items) =>
+        items.map((item) => item.id === updated.id ? updated : item)
+      );
+      if (selectedProject?.id === updated.id) {
+        setSelectedProject(updated);
+      }
+      setEditingProjectId(null);
+      setProjectMenuId(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not rename the project."
+      );
+    }
+  }
+
+  async function toggleProjectPin(project: ResearchProject) {
+    try {
+      const updated = await updateProject(project.id, {
+        is_pinned: !project.is_pinned,
+      });
+      setProjects((items) =>
+        items
+          .map((item) => item.id === updated.id ? updated : item)
+          .sort((a, b) => {
+            if (a.is_pinned !== b.is_pinned) {
+              return a.is_pinned ? -1 : 1;
+            }
+            return b.updated_at.localeCompare(a.updated_at);
+          })
+      );
+      if (selectedProject?.id === updated.id) {
+        setSelectedProject(updated);
+      }
+      setProjectMenuId(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update the project pin."
+      );
+    }
+  }
+
+  async function removeProject(project: ResearchProject) {
+    const confirmed = window.confirm(
+      "Delete \"" + project.name + "\"? This removes the project, its conversation, and its uploaded PDFs."
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteProject(project.id);
+      const remaining = projects.filter(
+        (item) => item.id !== project.id
+      );
+      setProjects(remaining);
+      setProjectMenuId(null);
+      setEditingProjectId(null);
+
+      if (selectedProject?.id === project.id) {
+        setSelectedProject(remaining[0] ?? null);
+        setSubmittedQuestion("");
+        setResponse(null);
+        setQuestion("");
+      }
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not delete the project."
+      );
+    }
   }
 
   function selectProject(
@@ -1604,36 +1698,127 @@ export default function App() {
               Create your first project
             </button>
           ) : (
-            <div className="wb-project-list">
-              {projects.map((project) => (
-                <button
-                  type="button"
-                  key={project.id}
-                  className={`wb-project-item ${
-                    selectedProject?.id === project.id
-                      ? "active"
-                      : ""
-                  }`}
-                  onClick={() => {
-                    selectProject(project);
-                    setView("research");
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <BookOpen size={16} />
+            <div className="wb-project-groups">
+              {(["pinned", "recent"] as const).map((group) => {
+                const items = projects.filter((project) =>
+                  group === "pinned"
+                    ? project.is_pinned
+                    : !project.is_pinned
+                );
 
-                  <span title={project.name}>
-                    {project.name}
-                  </span>
+                if (items.length === 0) return null;
 
-                  {selectedProject?.id ===
-                    project.id && (
-                    <span className="wb-project-active-dot" />
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
+                return (
+                  <div className="wb-project-group" key={group}>
+                    <span className="wb-project-group-label">
+                      {group === "pinned" ? "PINNED" : "RECENT"}
+                    </span>
+
+                    <div className="wb-project-list">
+                      {items.map((project) => (
+                        <div
+                          className={`wb-project-row ${selectedProject?.id === project.id ? "active" : ""}`}
+                          key={project.id}
+                        >
+                          {editingProjectId === project.id ? (
+                            <form
+                              className="wb-project-rename"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void saveProjectName(project);
+                              }}
+                            >
+                              <input
+                                value={editingProjectName}
+                                onChange={(event) =>
+                                  setEditingProjectName(event.target.value)
+                                }
+                                autoFocus
+                                maxLength={100}
+                                aria-label="Project name"
+                              />
+                            </form>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`wb-project-item ${selectedProject?.id === project.id ? "active" : ""}`}
+                              onClick={() => {
+                                selectProject(project);
+                                setView("research");
+                                setSidebarOpen(false);
+                              }}
+                            >
+                              {project.is_pinned ? (
+                                <Pin size={14} />
+                              ) : (
+                                <BookOpen size={16} />
+                              )}
+                              <span title={project.name}>
+                                {project.name}
+                              </span>
+                              {selectedProject?.id === project.id && (
+                                <span className="wb-project-active-dot" />
+                              )}
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            className="wb-project-menu-button"
+                            aria-label={"Actions for " + project.name}
+                            aria-expanded={projectMenuId === project.id}
+                            onClick={() =>
+                              setProjectMenuId((current) =>
+                                current === project.id ? null : project.id
+                              )
+                            }
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+
+                          {projectMenuId === project.id && (
+                            <div className="wb-project-menu" role="menu">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingProjectId(project.id);
+                                  setEditingProjectName(project.name);
+                                  setProjectMenuId(null);
+                                }}
+                              >
+                                <Pencil size={14} />
+                                Rename
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => void toggleProjectPin(project)}
+                              >
+                                {project.is_pinned ? (
+                                  <PinOff size={14} />
+                                ) : (
+                                  <Pin size={14} />
+                                )}
+                                {project.is_pinned ? "Unpin" : "Pin"}
+                              </button>
+
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => void removeProject(project)}
+                              >
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>          )}
         </div>
 
         <div className="sidebar-spacer" />
