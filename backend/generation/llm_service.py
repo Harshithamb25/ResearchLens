@@ -885,3 +885,83 @@ def generate_answer(
     raise RuntimeError(
         "Research answer generation failed."
     ) from last_error
+
+def generate_document_answer(
+    question,
+    evidence,
+):
+    """Generate a simple grounded answer for Document Lens."""
+    prepared = _prepare_evidence(evidence)
+
+    if not prepared:
+        return None
+
+    context = json.dumps(
+        prepared,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+    prompt = f"""
+You are ResearchLens Document Lens, a grounded document
+understanding assistant.
+
+Answer the user's question using ONLY the supplied
+document passages.
+
+Rules:
+- Do not invent information.
+- If the supplied passages do not establish an answer,
+  say that the available document evidence is insufficient.
+- Preserve distinctions between facts, proposals,
+  observations and conclusions.
+- Every substantive factual statement must have an
+  immediately adjacent citation.
+- Use ONLY this citation format:
+  [Original filename.pdf, Page 3]
+- Copy filenames and page numbers exactly from the
+  supplied evidence.
+- Do not cite a page that was not supplied.
+- Do not expose internal chunk IDs, metadata or
+  retrieval scores.
+- Do not turn document content into research comparisons
+  unless the user explicitly asks for a comparison.
+- Write concise professional Markdown.
+
+USER QUESTION:
+{question}
+
+DOCUMENT PASSAGES:
+{context}
+"""
+
+    for attempt in range(MAX_GENERATION_ATTEMPTS):
+        try:
+            raw_answer = _request_answer(prompt)
+            answer, issues = _finalize_answer(
+                raw_answer,
+                prepared,
+            )
+
+            if not issues:
+                return answer
+
+            if attempt + 1 >= MAX_GENERATION_ATTEMPTS:
+                return (
+                    "The document evidence was retrieved, "
+                    "but a reliably cited answer could not "
+                    "be generated. Please inspect the source "
+                    "passages."
+                )
+
+            prompt = _repair_prompt(
+                prompt,
+                raw_answer,
+                issues,
+            )
+        except Exception:
+            if attempt + 1 >= MAX_GENERATION_ATTEMPTS:
+                raise
+            time.sleep(1)
+
+    return None
