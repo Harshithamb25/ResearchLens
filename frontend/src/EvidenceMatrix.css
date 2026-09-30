@@ -434,3 +434,140 @@
   margin-top: 0.3rem;
   line-height: 1.45;
 }
+
+/* =========================================================
+   PHASE 3 — EVIDENCE MATRIX SURFACE
+   ========================================================= */
+
+.matrix-workspace {
+  margin-top: 20px;
+}
+
+.matrix-heading h3 {
+  font-family: Manrope, sans-serif;
+  font-size: 20px;
+  letter-spacing: -.55px;
+}
+
+.matrix-actions button {
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.matrix-export-button {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.matrix-summary,
+.matrix-reading-guide {
+  border-radius: 9px;
+  box-shadow: none;
+}
+
+.matrix-summary {
+  padding: 11px 13px;
+  font-size: 11px;
+}
+
+.matrix-reading-guide {
+  background: var(--bg);
+  font-size: 10px;
+}
+
+.matrix-table-scroll {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.matrix-table {
+  font-size: 11px;
+}
+
+.matrix-table th {
+  padding: 12px 13px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.matrix-table td {
+  min-width: 285px;
+  width: 310px;
+  padding: 12px 13px;
+}
+
+.matrix-table th:nth-child(2),
+.matrix-table td:nth-child(2) {
+  background: var(--surface);
+}
+
+.matrix-table tbody tr {
+  transition: background 140ms ease;
+}
+
+.matrix-table tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.matrix-paper strong {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.matrix-paper a,
+.matrix-pdf-link,
+.matrix-cell-source {
+  color: var(--accent-text);
+  font-size: 10px;
+}
+
+.matrix-finding {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.matrix-finding-marker {
+  width: 16px;
+  height: 16px;
+}
+
+.matrix-dialog {
+  border-radius: 13px;
+  box-shadow: 0 22px 70px rgba(0,0,0,.2);
+}
+
+.matrix-source-card {
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.matrix-source-passage {
+  margin-top: 13px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.matrix-source-passage span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.matrix-source-passage p {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .matrix-table tbody tr {
+    transition: none;
+  }
+}
