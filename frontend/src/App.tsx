@@ -980,6 +980,37 @@ export default function App() {
     }
   }
 
+  async function switchProjectMode(
+    mode: "document" | "research"
+  ) {
+    if (!selectedProject || selectedProject.mode === mode) return;
+
+    if (
+      mode === "research" &&
+      selectedProject.document_count < 2
+    ) {
+      setError("Research Lens requires at least two indexed papers.");
+      return;
+    }
+
+    try {
+      const updated = await updateProject(selectedProject.id, { mode });
+      setProjects((items) =>
+        items.map((item) =>
+          item.id === updated.id ? updated : item
+        )
+      );
+      selectProject(updated);
+      setError(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not switch the project mode."
+      );
+    }
+  }
+
   function selectProject(
     project: ResearchProject | null
   ) {
@@ -1936,6 +1967,33 @@ export default function App() {
                   ? `${selectedProject.document_count} ${selectedProject.mode === "document" ? "documents" : "papers"} · Active`
                   : "Create a project to begin"}
               </span>
+
+              {selectedProject && (
+                <div
+                  className="wb-mode-switcher"
+                  role="group"
+                  aria-label="Workspace mode"
+                >
+                  <button
+                    type="button"
+                    className={selectedProject.mode === "document" ? "active" : ""}
+                    aria-pressed={selectedProject.mode === "document"}
+                    onClick={() => void switchProjectMode("document")}
+                    disabled={loading}
+                  >
+                    Document Lens
+                  </button>
+                  <button
+                    type="button"
+                    className={selectedProject.mode === "research" ? "active" : ""}
+                    aria-pressed={selectedProject.mode === "research"}
+                    onClick={() => void switchProjectMode("research")}
+                    disabled={loading}
+                  >
+                    Research Lens
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
