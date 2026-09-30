@@ -2289,3 +2289,115 @@ button:disabled {
     margin-top: 6vh;
   }
 }
+
+
+/* Conversational reading surface */
+.app-shell .conversation-history {
+  margin-top: 8px;
+}
+
+.app-shell .conversation-message {
+  max-width: 780px;
+  border: 0;
+  box-shadow: none;
+}
+
+.app-shell .conversation-message.user {
+  margin-left: auto;
+  background: var(--accent-soft);
+  border-radius: 13px 13px 3px 13px;
+}
+
+.app-shell .wb-response-card {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 0 0 120px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell .wb-response-card > .section-caption {
+  display: none;
+}
+
+.app-shell .wb-response-card > h1 {
+  width: fit-content;
+  max-width: min(720px, 88%);
+  margin: 0 0 20px auto;
+  padding: 11px 14px;
+  border-radius: 13px 13px 3px 13px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app-shell .wb-response-card .answer-card {
+  max-width: 780px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell .wb-response-card .answer-card::before {
+  content: "Assistant";
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.app-shell.mode-document .wb-response-card {
+  max-width: 780px;
+}
+
+.app-shell.mode-document .wb-response-card .answer-card::before {
+  content: "Document Lens";
+}
+
+.app-shell.mode-research .wb-response-card .answer-card::before {
+  content: "Research Lens";
+}
+
+.app-shell .conversation-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.app-shell .conversation-message.assistant {
+  padding: 0;
+  background: transparent;
+}
+
+.app-shell .conversation-message.user .conversation-content {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.app-shell .conversation-message.assistant .conversation-content {
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.app-shell .conversation-message .conversation-role {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .app-shell .wb-response-card > h1 {
+    max-width: 92%;
+  }
+}
