@@ -74,6 +74,85 @@ def _require_session(
     return session
 
 
+def _get_or_create_conversation(connection, project_id: str) -> str:
+    row = connection.execute(
+        "SELECT id FROM conversations WHERE project_id = ?",
+        (project_id,),
+    ).fetchone()
+
+    if row is not None:
+        return row["id"]
+
+    conversation_id = str(uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    connection.execute(
+        """
+        INSERT INTO conversations (
+            id, project_id, title, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            conversation_id,
+            project_id,
+            "New conversation",
+            timestamp,
+            timestamp,
+        ),
+    )
+
+    return conversation_id
+
+
+def _append_conversation_message(
+    connection,
+    conversation_id: str,
+    role: str,
+    content: str,
+    response: dict | None = None,
+) -> str:
+    message_id = str(uuid4())
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    connection.execute(
+        """
+        INSERT INTO conversation_messages (
+            id,
+            conversation_id,
+            role,
+            content,
+            response_json,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            message_id,
+            conversation_id,
+            role,
+            content,
+            (
+                json.dumps(response, ensure_ascii=False)
+                if response is not None
+                else None
+            ),
+            timestamp,
+        ),
+    )
+
+    connection.execute(
+        """
+        UPDATE conversations
+        SET updated_at = ?
+        WHERE id = ?
+        """,
+        (timestamp, conversation_id),
+    )
+
+    return message_id
+
+
 def save_research_session(
     project_id: str,
     question: str,
@@ -132,6 +211,38 @@ def save_research_session(
                 created_at,
             ),
         )
+
+        conversation_id = _get_or_create_conversation(
+            connection,
+            project_id,
+        )
+
+        _append_conversation_message(
+            connection,
+            conversation_id,
+            "user",
+            question,
+        )
+
+        assistant_content = (
+            encoded_response
+            .get("data", {})
+            .get("answer", "")
+        )
+
+        _append_conversation_message(
+            connection,
+            conversation_id,
+            "assistant",
+            assistant_content
+            if isinstance(assistant_content, str)
+            else json.dumps(
+                encoded_response,
+                ensure_ascii=False,
+            ),
+            encoded_response,
+        )
+
         connection.commit()
 
     return session_id
@@ -462,3 +573,75 @@ def export_dedicated_paper_matrix(
             "Cache-Control": "private, no-store",
         },
     )
+
+
+@router.get("/{project_id}/conversation")
+def get_project_conversation(project_id: str):
+    """Return the persistent conversation for a project."""
+    initialize_database()
+    require_project(project_id)
+
+    with get_connection() as connection:
+        conversation = connection.execute(
+            """
+            SELECT id, project_id, title, created_at, updated_at
+            FROM conversations
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+
+        if conversation is None:
+            conversation_id = _get_or_create_conversation(
+                connection,
+                project_id,
+            )
+            connection.commit()
+            conversation = connection.execute(
+                """
+                SELECT id, project_id, title, created_at, updated_at
+                FROM conversations
+                WHERE id = ?
+                """,
+                (conversation_id,),
+            ).fetchone()
+
+        messages = connection.execute(
+            """
+            SELECT
+                id,
+                role,
+                content,
+                response_json,
+                created_at
+            FROM conversation_messages
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (conversation["id"],),
+        ).fetchall()
+
+    return {
+        "success": True,
+        "conversation": {
+            "id": conversation["id"],
+            "project_id": conversation["project_id"],
+            "title": conversation["title"],
+            "created_at": conversation["created_at"],
+            "updated_at": conversation["updated_at"],
+            "messages": [
+                {
+                    "id": row["id"],
+                    "role": row["role"],
+                    "content": row["content"],
+                    "response": (
+                        json.loads(row["response_json"])
+                        if row["response_json"]
+                        else None
+                    ),
+                    "created_at": row["created_at"],
+                }
+                for row in messages
+            ],
+        },
+    }
