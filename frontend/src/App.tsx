@@ -49,6 +49,7 @@ import {
 
 import {
   analyzeResearch,
+  analyzeDocument,
   type AnalysisStatus,
   type EvidenceItem,
   type QueryResponse,
@@ -709,9 +710,12 @@ export default function App() {
       return;
     }
 
-    if (selectedProject.document_count < 2) {
+    if (
+      selectedProject.mode === "research" &&
+      selectedProject.document_count < 2
+    ) {
       setError(
-        "Upload at least two indexed papers before researching."
+        "Upload at least two indexed papers before using Research Lens."
       );
       return;
     }
@@ -734,11 +738,18 @@ export default function App() {
     setSidebarOpen(false);
 
     try {
-      const nextResponse = await analyzeResearch(
-        selectedProject.id,
-        trimmed,
-        controller.signal
-      );
+      const nextResponse =
+        selectedProject.mode === "document"
+          ? await analyzeDocument(
+              selectedProject.id,
+              trimmed,
+              controller.signal
+            )
+          : await analyzeResearch(
+              selectedProject.id,
+              trimmed,
+              controller.signal
+            );
 
       if (controller.signal.aborted) return;
 
