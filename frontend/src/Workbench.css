@@ -2445,3 +2445,225 @@ button:disabled {
   border-color: #dfe1e7;
   box-shadow: 0 12px 34px rgba(30, 32, 45, .07);
 }
+
+
+/* =========================================================
+   CONVERSATIONAL WORKSPACE REFINEMENT
+   ========================================================= */
+
+.app-shell .research-main {
+  padding-bottom: 150px;
+}
+
+.app-shell .welcome {
+  max-width: 900px;
+  margin-top: 38px;
+}
+
+.app-shell .welcome h1 {
+  max-width: 760px;
+  font-size: clamp(32px, 4vw, 52px);
+  letter-spacing: -2px;
+}
+
+.app-shell .welcome-description {
+  max-width: 680px;
+  font-size: 14px;
+}
+
+.app-shell .suggestion-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.app-shell .suggestion {
+  min-height: 82px;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.app-shell .suggestion:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  transform: translateY(-1px);
+}
+
+.wb-bottom-composer {
+  width: min(900px, calc(100% - 16px));
+  max-width: 900px;
+  margin: 20px auto 0;
+  padding: 0;
+}
+
+.wb-bottom-composer .question-form {
+  padding: 14px 16px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 17px;
+  box-shadow: 0 14px 36px rgba(35, 38, 72, 0.10);
+}
+
+.wb-bottom-composer .question-form textarea {
+  min-height: 54px;
+  font-size: 14px;
+}
+
+.wb-bottom-composer .question-form textarea::placeholder {
+  color: var(--muted);
+}
+
+.wb-bottom-composer .form-bottom {
+  margin-top: 8px;
+}
+
+.wb-bottom-composer .submit-button {
+  width: 40px;
+  height: 40px;
+}
+
+.wb-conversation-turn {
+  display: grid;
+  gap: 14px;
+  width: min(900px, 100%);
+  margin: 0 auto 24px;
+}
+
+.wb-chat-message {
+  max-width: 88%;
+  padding: 15px 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  line-height: 1.7;
+}
+
+.wb-chat-user {
+  justify-self: end;
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.wb-chat-assistant {
+  justify-self: start;
+  width: min(100%, 820px);
+  background: var(--surface);
+}
+
+.wb-chat-role {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.wb-chat-message p {
+  margin: 0;
+}
+
+.wb-chat-user p {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wb-chat-assistant-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wb-chat-assistant-heading .wb-chat-role {
+  margin: 0;
+  color: var(--accent-text);
+}
+
+.wb-chat-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.wb-chat-answer {
+  padding: 17px 2px 4px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.wb-chat-answer > :first-child {
+  margin-top: 0;
+}
+
+.wb-chat-answer > :last-child {
+  margin-bottom: 0;
+}
+
+.wb-chat-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 15px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+
+.wb-chat-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: var(--bg);
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.app-shell.mode-document .wb-chat-meta span {
+  background: var(--accent-soft);
+}
+
+.app-shell.mode-document .wb-chat-assistant {
+  border-top: 2px solid var(--accent);
+}
+
+.app-shell.mode-research .wb-chat-assistant {
+  border-top: 2px solid var(--accent);
+}
+
+@media (max-width: 900px) {
+  .app-shell .suggestion-list {
+    grid-template-columns: 1fr;
+  }
+
+  .wb-chat-message,
+  .wb-chat-assistant {
+    max-width: 100%;
+  }
+
+  .wb-bottom-composer {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell .welcome {
+    margin-top: 20px;
+  }
+
+  .app-shell .welcome h1 {
+    font-size: 32px;
+    letter-spacing: -1.2px;
+  }
+
+  .wb-chat-assistant-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+}
