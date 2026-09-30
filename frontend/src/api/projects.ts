@@ -239,4 +239,34 @@ export function getProjectPaperUrl(
   );
 }
 
-export async function updateProject(\n  projectId: string,\n  changes: {\n    name?: string;\n    description?: string;\n    mode?: "document" | "research";\n    is_pinned?: boolean;\n  }\n): Promise<ResearchProject> {\n  const response = await fetch(\n    API_URL + "/projects/" + encodeURIComponent(projectId),\n    {\n      method: "PATCH",\n      headers: { "Content-Type": "application/json" },\n      body: JSON.stringify(changes),\n    }\n  );\n\n  if (!response.ok) throw new Error(await readApiError(response));\n  return response.json();\n}\n\nexport async function deleteProject(projectId: string): Promise<void> {\n  const response = await fetch(\n    API_URL + "/projects/" + encodeURIComponent(projectId),\n    { method: "DELETE" }\n  );\n  if (!response.ok) throw new Error(await readApiError(response));\n  const data: { success?: boolean } = await response.json();\n  if (!data.success) throw new Error("The server did not confirm project deletion.");\n}\n
+export async function updateProject(
+  projectId: string,
+  changes: {
+    name?: string;
+    description?: string;
+    mode?: "document" | "research";
+    is_pinned?: boolean;
+  }
+): Promise<ResearchProject> {
+  const response = await fetch(
+    API_URL + "/projects/" + encodeURIComponent(projectId),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    }
+  );
+
+  if (!response.ok) throw new Error(await readApiError(response));
+  return response.json();
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  const response = await fetch(
+    API_URL + "/projects/" + encodeURIComponent(projectId),
+    { method: "DELETE" }
+  );
+  if (!response.ok) throw new Error(await readApiError(response));
+  const data: { success?: boolean } = await response.json();
+  if (!data.success) throw new Error("The server did not confirm project deletion.");
+}
