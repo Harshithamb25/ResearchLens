@@ -21,6 +21,9 @@ from backend.retrieval.vector_store import (
     remove_project_document,
 )
 from backend.pipeline import process_query
+from backend.retrieval.retriever import search
+from backend.retrieval.reranker import rerank
+from backend.generation.llm_service import generate_document_answer
 from backend.workspace.database import (
     get_connection,
     initialize_database,
@@ -593,6 +596,158 @@ def upload_project_paper(
 # Project-scoped research query
 # WITH AUTOMATIC SESSION SAVING
 # --------------------------------------------------
+
+@router.post("/{project_id}/document-query")
+def query_project_document(
+    project_id: str,
+    request: ProjectQueryRequest,
+) -> dict[str, Any]:
+    """Run ordinary grounded document understanding without research analysis."""
+    initialize_database()
+    _require_project(project_id)
+
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(
+            status_code=422,
+            detail="Document question cannot be empty.",
+        )
+
+    with get_connection() as connection:
+        project = connection.execute(
+            "SELECT mode FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        document_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM documents
+            WHERE project_id = ?
+              AND indexed_chunks > 0
+            """,
+            (project_id,),
+        ).fetchone()[0]
+
+    if project["mode"] != "document":
+        raise HTTPException(
+            status_code=409,
+            detail="This project is configured for Research Lens.",
+        )
+
+    if document_count < 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Upload at least one indexed PDF before asking a document question.",
+        )
+
+    try:
+        results = search(
+            question,
+            top_k=request.retrieval_k,
+            project_id=project_id,
+        )
+
+        documents = (results.get("documents") or [[]])[0]
+        metadatas = (results.get("metadatas") or [[]])[0]
+        distances = (results.get("distances") or [[]])[0]
+
+        candidates = []
+        for text, metadata, distance in zip(
+            documents,
+            metadatas,
+            distances,
+        ):
+            if not text or not metadata:
+                continue
+            candidates.append(
+                {
+                    "text": text,
+                    "document": metadata.get("document"),
+                    "document_id": metadata.get("document_id"),
+                    "page": metadata.get("page"),
+                    "chunk_id": metadata.get("chunk_id"),
+                    "retrieval_score": (
+                        1.0 - float(distance)
+                        if distance is not None
+                        else None
+                    ),
+                }
+            )
+
+        ranked = rerank(
+            question,
+            candidates,
+            top_k=request.rerank_k,
+        )
+
+        evidence = [
+            {
+                **item,
+                "evidence_scope": "UNCERTAIN",
+                "contribution_type": "UNCERTAIN",
+            }
+            for item in ranked
+        ]
+
+        answer = generate_document_answer(
+            question,
+            evidence,
+        )
+
+        response_data = {
+            "question": question,
+            "query_type": "document",
+            "route": "document_rag",
+            "answer": answer,
+            "answer_generated": answer is not None,
+            "citation_validation": None,
+            "analysis_status": "not_applicable",
+            "analysis_message": (
+                "Document Lens used project-scoped semantic "
+                "retrieval and reranking without research analysis."
+            ),
+            "audit_completed": False,
+            "failed_group_count": 0,
+            "result": {
+                "evidence": evidence,
+                "cross_paper_evidence": False,
+                "themes": [],
+                "theme_comparisons": [],
+                "analysis_failures": [],
+            },
+        }
+
+        response = {
+            "success": True,
+            "project_id": project_id,
+            "analysis_status": "not_applicable",
+            "audit_completed": False,
+            "data": response_data,
+        }
+
+        session_id = save_research_session(
+            project_id=project_id,
+            question=question,
+            response=response,
+        )
+
+        return {
+            **response,
+            "session_id": session_id,
+        }
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+    except Exception as error:
+        logger.exception("Project document query failed")
+        raise HTTPException(
+            status_code=500,
+            detail="ResearchLens could not process the document query.",
+        ) from error
+
 
 @router.post("/{project_id}/query")
 def query_project(
