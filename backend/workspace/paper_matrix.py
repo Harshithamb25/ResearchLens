@@ -1,450 +1,350 @@
-"""Evidence-grounded paper-wise matrix extraction.
+"""AI-assisted, evidence-grounded paper comparison matrix.
 
-The matrix is built from the original project PDFs. Candidate findings are
-cleaned into complete, readable evidence sentences while preserving the
-original source page and passage for verification.
+The table shows concise analytical paraphrases. The original PDF passage is
+retained separately for verification. Accuracy is percentage-only.
 """
 
 import csv
 import io
+import json
 import re
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+from backend.generation.llm_service import MODEL_NAME, _get_client
 from backend.ingestion.pdf_loader import extract_text_from_pdf
+from google.genai import types
 
 
 NOT_IDENTIFIED = "Not identified in extracted evidence"
+NOT_REPORTED = "Not reported"
 
 MATRIX_COLUMNS = [
     ("serial_number", "S. No."),
     ("paper_title", "Paper Title"),
-    ("methodology", "Methodology / Algorithm used"),
+    ("methodology", "Methodology / Algorithm"),
     ("datasets", "Dataset(s)"),
-    ("evaluation_metrics", "Eval Metrics"),
-    ("accuracy_results", "Accuracy / Results"),
+    ("evaluation_metrics", "Evaluation Metrics"),
+    ("accuracy_percent", "Accuracy (%)"),
+    ("accuracy_results", "Results / Findings"),
     ("advantages", "Advantages"),
-    ("limitations", "Disadvantages / Limitations"),
+    ("limitations", "Limitations"),
     ("applications", "Applications"),
 ]
 
-FIELDS = [
-    key for key, _ in MATRIX_COLUMNS
-    if key not in {"serial_number", "paper_title"}
-]
+FIELDS = [key for key, _ in MATRIX_COLUMNS
+          if key not in {"serial_number", "paper_title"}]
 
-MAX_ENTRIES = 6
-MAX_PAGE_CHARS = 14000
-MAX_FINDING_CHARS = 420
+MAX_FINDINGS = 3
+MAX_SOURCE_CHARS = 70000
+MAX_PAGE_CHARS = 10000
+MAX_FINDING_WORDS = 32
+
+FIELD_RULES = {
+    "methodology": "Summarize the paper's actual proposed or implemented approach.",
+    "datasets": (
+        "Identify the actual data, field trial, sample, route, population, or "
+        "observations used. Do not treat one example coordinate as a dataset."
+    ),
+    "evaluation_metrics": (
+        "List evaluation measures actually used, excluding percentage accuracy. "
+        "Examples: detection range, delay, journey time, cost, precision, recall, RMSE."
+    ),
+    "accuracy_percent": (
+        "Return only an explicitly reported accuracy percentage. "
+        "Return null for 'accurate', 'high accuracy', reliability, range, delay, cost, "
+        "precision, recall, or any non-percentage metric."
+    ),
+    "accuracy_results": (
+        "Summarize important reported results or observations, separate from accuracy."
+    ),
+    "advantages": "Summarize supported benefits of the paper's own approach.",
+    "limitations": (
+        "Summarize explicit limitations, dependencies, constraints, failures, "
+        "maintenance needs, or clearly supported weaknesses of the paper's approach."
+    ),
+    "applications": "Summarize concrete intended or demonstrated application areas.",
+}
 
 
-def _normalize(text: str) -> str:
+def _normalize(value: Any) -> str:
     replacements = {
-        "â¢": "•",
-        "â€“": "–",
-        "â€”": "—",
-        "â€™": "'",
-        "â€œ": '"',
-        "â€": '"',
-        "ﬁ": "fi",
-        "ﬂ": "fl",
+        "â¢": "•", "â€“": "–", "â€”": "—", "â€™": "'",
+        "â€œ": '"', "â€": '"', "ﬁ": "fi", "ﬂ": "fl",
     }
+    text = str(value or "")
     for source, target in replacements.items():
         text = text.replace(source, target)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def _looks_like_pdf_noise(text: str) -> bool:
-    value = _normalize(text)
-    lowered = value.casefold()
-
-    noise_signals = [
-        "doi:",
-        "corresponding author",
-        "all rights reserved",
-        "open access",
-        "creativecommons",
-        "frontiersin.org",
-        "received:",
-        "accepted:",
-        "published:",
-        "issn",
-        "e-issn",
-        "pp1826-1833",
-        "vol.",
-        "journal of",
-        "international conference on",
-    ]
-
-    if any(signal in lowered for signal in noise_signals):
-        return True
-
-    # Page numbers and academic header fragments are not useful findings.
-    if re.search(r"\b(?:pp?\.?\s*)?\d{3,4}\s*[–-]\s*\d{3,4}\b", value):
-        return True
-
-    if re.fullmatch(r"\d+(?:\s+\d+)*", value):
-        return True
-
-    return False
+def _source_text(pages: list[dict[str, Any]]) -> str:
+    chunks = []
+    total = 0
+    for item in pages:
+        page = int(item.get("page", 0))
+        text = _normalize(item.get("text", ""))[:MAX_PAGE_CHARS]
+        if not text:
+            continue
+        chunk = f"\n--- PAGE {page} ---\n{text}"
+        chunks.append(chunk)
+        total += len(chunk)
+        if total >= MAX_SOURCE_CHARS:
+            break
+    return "".join(chunks)[:MAX_SOURCE_CHARS]
 
 
-def _split_sentences(text: str) -> list[str]:
-    text = _normalize(text)
-    if not text:
-        return []
+def _schema() -> dict[str, Any]:
+    finding = {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "string",
+                "description": (
+                    "Concise analytical paraphrase, normally 5-18 words. "
+                    "Do not quote the PDF."
+                ),
+            },
+            "page": {"type": "integer", "minimum": 1},
+        },
+        "required": ["summary", "page"],
+        "additionalProperties": False,
+    }
+    findings = {
+        "type": "array",
+        "items": finding,
+        "maxItems": MAX_FINDINGS,
+    }
+    return {
+        "type": "object",
+        "properties": {
+            "paper_title": {
+                "type": "string",
+                "description": "Exact paper title printed inside the PDF.",
+            },
+            "title_page": {"type": "integer", "minimum": 1},
+            "methodology": findings,
+            "datasets": findings,
+            "evaluation_metrics": findings,
+            "accuracy_percent": {
+                "type": ["number", "null"],
+                "description": "Explicit percentage accuracy only; otherwise null.",
+            },
+            "accuracy_page": {
+                "type": ["integer", "null"],
+                "minimum": 1,
+            },
+            "accuracy_results": findings,
+            "advantages": findings,
+            "limitations": findings,
+            "applications": findings,
+        },
+        "required": [
+            "paper_title", "title_page", "methodology", "datasets",
+            "evaluation_metrics", "accuracy_percent", "accuracy_page",
+            "accuracy_results", "advantages", "limitations", "applications",
+        ],
+        "additionalProperties": False,
+    }
 
-    # Preserve normal decimal numbers while splitting on sentence-ending
-    # punctuation followed by a likely sentence start.
-    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", text)
-    return [_normalize(part) for part in parts if _normalize(part)]
+
+def _prompt(filename: str, source: str) -> str:
+    rules = "\n".join(f"- {key}: {value}" for key, value in FIELD_RULES.items())
+    return f"""
+You are ResearchLens, an academic paper-analysis component.
+
+Analyze the uploaded PDF below and create a concise research comparison record.
+
+The source is evidence, NOT text to reproduce.
+
+STRICT OUTPUT RULES:
+1. Paraphrase every matrix finding. Do not copy complete PDF sentences.
+2. Do not reproduce long phrases from the PDF.
+3. Use short, polished academic wording; each finding must be <= {MAX_FINDING_WORDS} words.
+4. Every finding must start with a capital letter and be a complete thought.
+5. Never include authors, affiliations, DOI, journal metadata, page headers,
+   section headings, citation-only material, or unrelated prior-work claims.
+6. Attribute results to this paper only when the source supports that.
+7. If a field is not supported, return an empty array rather than guessing.
+8. Dataset(s) means the actual data/study material used by this paper.
+9. Accuracy (%) is ONLY an explicit numeric percentage labelled as accuracy.
+   Never convert precision, recall, range, delay, cost, reliability, or another
+   metric into accuracy.
+10. Every finding needs the supporting PDF page number.
+
+FIELD DEFINITIONS:
+{rules}
+
+SOURCE FILE: {filename}
+
+SOURCE PDF:
+{source}
+"""
 
 
-def _complete_sentence(text: str) -> str:
-    """Return one readable complete sentence, never a character-truncated one."""
-    text = _normalize(text).strip(" -•·\t")
-    if not text:
-        return ""
-
-    sentences = _split_sentences(text)
-    if sentences:
-        candidate = sentences[0]
-
-        # A sentence ending in an obvious abbreviation should not be treated
-        # as complete merely because the extractor encountered a period.
-        if len(candidate) >= 35:
-            if candidate[-1] not in ".!?":
-                return ""
-            return candidate
-
-    return ""
-
-
-def _sentence_context(text: str, start: int, end: int) -> str:
-    """Find a complete sentence around a matched signal."""
-    left_boundary = max(
-        text.rfind(".", 0, start),
-        text.rfind("!", 0, start),
-        text.rfind("?", 0, start),
+def _generate(filename: str, source: str) -> dict[str, Any]:
+    response = _get_client().models.generate_content(
+        model=MODEL_NAME,
+        contents=_prompt(filename, source),
+        config=types.GenerateContentConfig(
+            temperature=0.1,
+            response_mime_type="application/json",
+            response_schema=_schema(),
+        ),
     )
-    left = left_boundary + 1
+    text = (response.text or "").strip()
+    if not text:
+        raise ValueError("Gemini returned an empty matrix analysis.")
+    result = json.loads(text)
+    if not isinstance(result, dict):
+        raise ValueError("Matrix analysis did not return an object.")
+    return result
 
-    right_candidates = [
-        position
-        for position in (
-            text.find(".", end),
-            text.find("!", end),
-            text.find("?", end),
-        )
-        if position != -1
-    ]
 
-    if not right_candidates:
+def _clean_summary(value: Any) -> str:
+    if not isinstance(value, str):
         return ""
-
-    right = min(right_candidates) + 1
-    candidate = _complete_sentence(text[left:right])
-
-    if candidate:
-        return candidate
-
-    return ""
-
-
-def _clean_candidate(value: str) -> str:
-    value = _normalize(value).strip(" -•·\t")
-    if not value or _looks_like_pdf_noise(value):
+    text = _normalize(value).strip(" -•·")
+    if not text or text[0].islower() or len(text.split()) > MAX_FINDING_WORDS:
         return ""
-
-    # Remove common citation markers that can leak from extracted PDF text.
-    value = re.sub(r"\s*\[[0-9,\-– ]+\]\s*", " ", value)
-    value = re.sub(r"\s+", " ", value).strip()
-
-    sentence = _complete_sentence(value)
-    if not sentence:
+    lowered = text.casefold()
+    noise = (
+        "doi", "corresponding author", "received", "accepted", "published",
+        "issn", "copyright", "frontiersin.org", "journal of", "school of",
+        "faculty of", "department of",
+    )
+    if any(token in lowered for token in noise):
         return ""
-
-    if len(sentence) > MAX_FINDING_CHARS:
-        # Do not create a broken sentence by slicing. Prefer the first
-        # complete sentence if the input contains multiple sentences.
-        sentences = _split_sentences(sentence)
-        if sentences:
-            sentence = sentences[0]
-
-    if len(sentence) < 35:
-        return ""
-
-    return sentence
+    return text
 
 
-def _add(
-    fields: dict[str, list[dict[str, Any]]],
-    seen: dict[str, set[str]],
+def _ngrams(source: str, size: int = 9) -> set[str]:
+    words = re.findall(r"[a-z0-9%]+", source.casefold())
+    return {" ".join(words[i:i + size])
+            for i in range(max(0, len(words) - size + 1))}
+
+
+def _too_verbatim(summary: str, source_ngrams: set[str]) -> bool:
+    words = re.findall(r"[a-z0-9%]+", summary.casefold())
+    return any(
+        " ".join(words[i:i + 9]) in source_ngrams
+        for i in range(max(0, len(words) - 8))
+    )
+
+
+def _page(value: Any, count: int) -> int | None:
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return None
+    return page if 1 <= page <= count else None
+
+
+def _entries(
+    analysis: dict[str, Any],
     field: str,
-    value: str,
-    evidence_text: str,
     filename: str,
     document_id: str,
-    page: int,
-) -> None:
-    clean_value = _clean_candidate(value)
-    clean_evidence = _normalize(evidence_text)
+    pages: list[dict[str, Any]],
+    source: str,
+) -> list[dict[str, Any]]:
+    raw = analysis.get(field) or []
+    if not isinstance(raw, list):
+        return []
 
-    if not clean_value:
-        return
+    source_ngrams = _ngrams(source)
+    result = []
+    seen = set()
 
-    # The finding must also be traceable to a real sentence in the source.
-    if not clean_evidence:
-        clean_evidence = clean_value
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
 
-    key = clean_value.casefold()
-    if key in seen[field] or len(fields[field]) >= MAX_ENTRIES:
-        return
+        summary = _clean_summary(item.get("summary"))
+        page = _page(item.get("page"), len(pages))
 
-    seen[field].add(key)
-    fields[field].append(
-        {
-            "value": clean_value,
-            "evidence_text": clean_evidence,
+        if not summary or page is None or _too_verbatim(summary, source_ngrams):
+            continue
+
+        key = summary.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        result.append({
+            "value": summary,
+            "evidence_text": _normalize(pages[page - 1].get("text", "")),
             "source": {
                 "paper": filename,
                 "document_id": document_id,
                 "page": page,
             },
-        }
-    )
+        })
+
+        if len(result) >= MAX_FINDINGS:
+            break
+
+    return result
 
 
-def _match_patterns(
-    text: str,
-    patterns: list[tuple[str, str]],
-) -> list[tuple[str, re.Match[str]]]:
-    matches: list[tuple[str, re.Match[str]]] = []
+def _accuracy(
+    analysis: dict[str, Any],
+    filename: str,
+    document_id: str,
+    pages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    raw = analysis.get("accuracy_percent")
+    page = _page(analysis.get("accuracy_page"), len(pages))
 
-    for label, pattern in patterns:
-        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-            matches.append((label, match))
+    if raw is None or page is None:
+        return []
 
-    matches.sort(key=lambda item: (item[1].start(), item[0]))
-    return matches
+    try:
+        number = float(raw)
+    except (TypeError, ValueError):
+        return []
 
+    if not 0 <= number <= 100:
+        return []
 
-METHOD_PATTERNS = [
-    (
-        "Methodology",
-        r"\b(?:we|our|this paper|the authors?)\s+"
-        r"(?:propose|proposed|develop|developed|design|designed|"
-        r"implement|implemented|use|used|adopt|adopted)\b"
-        r"[^.!?\n]{0,260}[.!?]",
-    ),
-    (
-        "System / architecture",
-        r"\b(?:system architecture|system design|"
-        r"proposed architecture|implementation design|"
-        r"experimental setup)\b[^.!?\n]{0,260}[.!?]",
-    ),
-]
-
-DATASET_PATTERNS = [
-    (
-        "Dataset",
-        r"\b(?:dataset|data set)\b[^.!?\n]{0,260}[.!?]",
-    ),
-    (
-        "Collected data",
-        r"\b(?:data|measurements?)\s+(?:were|was)\s+"
-        r"(?:collected|recorded|gathered)\b[^.!?\n]{0,260}[.!?]",
-    ),
-    (
-        "Field-trial data",
-        r"\b(?:field trial|field trials|pilot study|"
-        r"real-world deployment|real-world use case)\b[^.!?\n]{0,260}[.!?]",
-    ),
-    (
-        "Study population / sample",
-        r"\b(?:sample|participants?|subjects?|observations?|cases?)\b"
-        r"[^.!?\n]{0,220}[.!?]",
-    ),
-]
-
-METRIC_PATTERNS = [
-    (
-        "Accuracy",
-        r"\b(?:accuracy|accurate|precision|recall|F1(?:[- ]score)?|"
-        r"sensitivity|specificity|AUC|RMSE|MAE|mAP)\b[^.!?\n]{0,180}[.!?]",
-    ),
-    (
-        "Detection / range",
-        r"\b(?:detection|detect(?:ed|ion)?|range)\b"
-        r"[^.!?\n]{0,180}\b\d+(?:\.\d+)?\s*(?:m|km|cm|ms|s|%)\b[^.!?\n]*[.!?]",
-    ),
-    (
-        "Delay / timing",
-        r"\b(?:delay|latency|journey time|travel time|"
-        r"on-time|early departures?|delayed departures?)\b"
-        r"[^.!?\n]{0,180}[.!?]",
-    ),
-    (
-        "Cost",
-        r"\b(?:cost|price|budget|expenditure)\b[^.!?\n]{0,180}[.!?]",
-    ),
-]
-
-RESULT_PATTERNS = [
-    (
-        "Quantitative result",
-        r"\b(?:accuracy|precision|recall|F1(?:[- ]score)?|"
-        r"on-time|early|delayed|detection|latency|delay|"
-        r"journey time|travel time|cost|total cost)\b"
-        r"[^.!?\n]{0,220}"
-        r"\b\d+(?:\.\d+)?\s*(?:%|m|km|cm|ms|s|BDT|USD|RM|"
-        r"minutes?|hours?)\b[^.!?\n]*[.!?]",
-    ),
-    (
-        "Observed result",
-        r"\b(?:results?|performance|experiment(?:al)?|"
-        r"observed|measured|show(?:s|ed)?)\b[^.!?\n]{0,260}[.!?]",
-    ),
-    (
-        "Tabulated result",
-        r"\b(?:table|figure)\s+\d+\b[^.!?\n]{0,220}[.!?]",
-    ),
-]
-
-ADVANTAGE_PATTERNS = [
-    (
-        "Explicit advantage",
-        r"\b(?:advantage|benefit|benefits|strength|"
-        r"cost-effective|cost effective|low-cost|low cost|"
-        r"user-friendly|easy(?: to)? implement|reliable|"
-        r"scalable|efficient|redundancy|robust)\b[^.!?\n]{0,220}[.!?]",
-    ),
-]
-
-LIMITATION_PATTERNS = [
-    (
-        "Explicit limitation",
-        r"\b(?:limitation|limitations|drawback|drawbacks|"
-        r"disadvantage|disadvantages|challenge|challenges|"
-        r"constraint|constraints|restricted|limited|"
-        r"dependency|depends on|requires|maintenance|"
-        r"fault|failure|unavailable|future work|future scope)\b"
-        r"[^.!?\n]{0,260}[.!?]",
-    ),
-]
-
-APPLICATION_PATTERNS = [
-    (
-        "Application",
-        r"\b(?:application|applications|use case|use cases|"
-        r"used for|useful for|designed for|deployed for|"
-        r"fleet management|vehicle tracking|bus tracking|"
-        r"ETA|estimated time of arrival|monitoring|"
-        r"smart transportation|public transportation)\b"
-        r"[^.!?\n]{0,220}[.!?]",
-    ),
-]
+    value = f"{int(number)}%" if number.is_integer() else f"{number:.2f}".rstrip("0").rstrip(".") + "%"
+    return [{
+        "value": value,
+        "evidence_text": _normalize(pages[page - 1].get("text", "")),
+        "source": {"paper": filename, "document_id": document_id, "page": page},
+    }]
 
 
-def _scan_with_patterns(
-    *,
-    text: str,
-    patterns: list[tuple[str, str]],
-    field: str,
-    add_match: Callable[[str, str, int, int], None],
-) -> None:
-    for _label, match in _match_patterns(text, patterns):
-        context = _sentence_context(text, match.start(), match.end())
-        if not context:
-            continue
-
-        add_match(
-            field,
-            context,
-            match.start(),
-            match.end(),
-        )
+def _fallback_title(filename: str) -> str:
+    return Path(filename).stem.replace("_", " ").strip()
 
 
-def _scan_paper(
+def _scan(
     filename: str,
     document_id: str,
     storage_path: str,
-) -> dict[str, list[dict[str, Any]]]:
-    fields = {field: [] for field in FIELDS}
-    seen = {field: set() for field in FIELDS}
-
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
     pages = extract_text_from_pdf(Path(storage_path))
+    if not pages:
+        raise ValueError(f"No extractable text found in {filename}.")
 
-    for page_data in pages:
-        page = int(page_data["page"])
-        text = _normalize(page_data.get("text", ""))[:MAX_PAGE_CHARS]
+    source = _source_text(pages)
+    analysis = _generate(filename, source)
 
-        if not text:
-            continue
+    title = _normalize(analysis.get("paper_title"))
+    if not title or len(title.split()) > 30:
+        title = _fallback_title(filename)
 
-        def add_match(
-            field: str,
-            value: str,
-            start: int,
-            end: int,
-        ) -> None:
-            _add(
-                fields=fields,
-                seen=seen,
-                field=field,
-                value=value,
-                evidence_text=_sentence_context(text, start, end),
-                filename=filename,
-                document_id=document_id,
-                page=page,
+    fields = {field: [] for field in FIELDS}
+    for field in FIELDS:
+        if field == "accuracy_percent":
+            fields[field] = _accuracy(analysis, filename, document_id, pages)
+        else:
+            fields[field] = _entries(
+                analysis, field, filename, document_id, pages, source
             )
 
-        _scan_with_patterns(
-            text=text,
-            patterns=METHOD_PATTERNS,
-            field="methodology",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=DATASET_PATTERNS,
-            field="datasets",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=METRIC_PATTERNS,
-            field="evaluation_metrics",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=RESULT_PATTERNS,
-            field="accuracy_results",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=ADVANTAGE_PATTERNS,
-            field="advantages",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=LIMITATION_PATTERNS,
-            field="limitations",
-            add_match=add_match,
-        )
-        _scan_with_patterns(
-            text=text,
-            patterns=APPLICATION_PATTERNS,
-            field="applications",
-            add_match=add_match,
-        )
-
-    return fields
+    return title, fields
 
 
 def build_paper_matrix(
@@ -452,28 +352,39 @@ def build_paper_matrix(
     papers: list[dict[str, Any]],
 ) -> dict[str, Any]:
     rows = []
+    errors = []
 
     for index, paper in enumerate(papers, start=1):
-        extracted = _scan_paper(
-            filename=paper["filename"],
-            document_id=paper["id"],
-            storage_path=paper["storage_path"],
-        )
+        filename = str(paper["filename"])
+        document_id = str(paper["id"])
 
-        row: dict[str, Any] = {
+        try:
+            title, extracted = _scan(
+                filename, document_id, paper["storage_path"]
+            )
+        except Exception as error:
+            errors.append(f"{filename}: {error}")
+            title = _fallback_title(filename)
+            extracted = {field: [] for field in FIELDS}
+
+        row = {
             "serial_number": index,
-            "paper_title": paper["filename"],
-            "document_id": paper["id"],
+            "paper_title": title,
+            "document_id": document_id,
+            "filename": filename,
             "fields": {},
         }
 
         for field in FIELDS:
             entries = extracted[field]
-            row[field] = (
-                "; ".join(item["value"] for item in entries)
-                if entries
-                else NOT_IDENTIFIED
-            )
+            if field == "accuracy_percent":
+                value = entries[0]["value"] if entries else NOT_REPORTED
+            else:
+                value = (
+                    " · ".join(entry["value"] for entry in entries)
+                    if entries else NOT_IDENTIFIED
+                )
+            row[field] = value
             row["fields"][field] = {
                 "reported": bool(entries),
                 "entries": entries,
@@ -484,30 +395,24 @@ def build_paper_matrix(
     return {
         "success": True,
         "project_id": project_id,
-        "extraction_mode": "page_aware_targeted_scan",
-        "columns": [
-            {"key": key, "label": label}
-            for key, label in MATRIX_COLUMNS
-        ],
+        "extraction_mode": "structured_ai_paper_analysis",
+        "columns": [{"key": key, "label": label} for key, label in MATRIX_COLUMNS],
         "rows": rows,
         "paper_count": len(rows),
         "note": (
-            "Values are candidate findings extracted directly from the "
-            "original project PDFs. Findings are presented as complete "
-            "source sentences; the original passage and page remain "
-            "available for verification. A populated cell does not mean "
-            "the field was scientifically validated. Empty fields are "
-            "shown as 'Not identified in extracted evidence'."
+            "The matrix displays concise AI-generated paraphrases grounded in "
+            "the uploaded PDFs. Original passages and page references remain "
+            "available in the evidence inspector. Accuracy (%) contains only "
+            "explicitly reported percentage accuracy."
         ),
+        "errors": errors,
     }
 
 
-def paper_matrix_to_csv(matrix: dict[str, Any]) -> str:
+def matrix_to_csv(matrix: dict[str, Any]) -> str:
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(label for _, label in MATRIX_COLUMNS)
-
-    for row in matrix["rows"]:
+    for row in matrix.get("rows", []):
         writer.writerow(row.get(key, "") for key, _ in MATRIX_COLUMNS)
-
     return output.getvalue()
