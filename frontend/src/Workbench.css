@@ -2171,3 +2171,121 @@ button:disabled {
     transition: none;
   }
 }
+
+
+/* =========================================================
+   MODE-SPECIFIC WORKSPACE OVERRIDES
+   ========================================================= */
+
+.app-shell .brand-copy strong { font-family: Manrope, sans-serif; }
+.app-shell .brand-copy span { color: var(--muted); }
+.app-shell .new-research { display: inline-flex; }
+.app-shell .nav-list { display: none; }
+.app-shell .sidebar-note { display: none; }
+
+.app-shell.mode-document .wb-result-tabs,
+.app-shell.mode-document .wb-inspector,
+.app-shell.mode-document .value-strip,
+.app-shell.mode-document .wb-results-top,
+.app-shell.mode-document .result-summary,
+.app-shell.mode-document .theme-section,
+.app-shell.mode-document .comparison-section,
+.app-shell.mode-document .cross-paper-section {
+  display: none !important;
+}
+
+.app-shell.mode-document .research-main {
+  padding-top: 24px;
+}
+
+.app-shell.mode-document .welcome {
+  max-width: 760px;
+  margin-top: 12vh;
+}
+
+.app-shell.mode-document .welcome h1 {
+  max-width: 690px;
+}
+
+.app-shell.mode-document .welcome-description {
+  max-width: 590px;
+}
+
+.app-shell.mode-document .suggestions {
+  max-width: 720px;
+  margin: 22px auto 0;
+}
+
+.app-shell.mode-document .suggestion-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.app-shell.mode-document .question-form {
+  max-width: 780px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 16px;
+}
+
+.app-shell.mode-document .wb-response-card {
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.app-shell.mode-document .wb-bottom-composer {
+  max-width: 820px;
+}
+
+.app-shell.mode-document .conversation-history {
+  max-width: 820px;
+}
+
+.app-shell.mode-document .conversation-message.assistant {
+  background: transparent;
+}
+
+.app-shell.mode-document .conversation-message.user {
+  max-width: 680px;
+}
+
+.app-shell.mode-document .project-mode-switcher {
+  display: none;
+}
+
+.app-shell.mode-research .project-mode-switcher {
+  display: none;
+}
+
+.app-shell .wb-mode-switcher {
+  min-height: 38px;
+  padding: 3px;
+}
+
+.app-shell .wb-mode-switcher button {
+  min-height: 32px;
+  padding: 7px 12px;
+  font-size: 10px;
+}
+
+.app-shell .wb-bottom-composer .question-form textarea {
+  min-height: 42px;
+}
+
+.app-shell .wb-bottom-composer .question-form {
+  border-radius: 15px;
+}
+
+.app-shell .research-main {
+  padding-bottom: 70px;
+}
+
+@media (max-width: 760px) {
+  .app-shell.mode-document .suggestion-list {
+    grid-template-columns: 1fr;
+  }
+
+  .app-shell.mode-document .welcome {
+    margin-top: 6vh;
+  }
+}
