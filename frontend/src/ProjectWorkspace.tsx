@@ -27,7 +27,6 @@ import {
   getProjectPapers,
   getProjects,
   uploadProjectPaper,
-  updateProject,
   type ProjectPaper,
   type ResearchProject,
 } from "./api/projects";
@@ -60,7 +59,6 @@ export default function ProjectWorkspace({
 
   const [projectName, setProjectName] = useState("");
   const [creatingMode, setCreatingMode] = useState<"document" | "research">("research");
-  const [modeUpdating, setModeUpdating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState("");
 
@@ -427,75 +425,7 @@ export default function ProjectWorkspace({
                 </span>
               </div>
 
-              <div
-                role="group"
-                aria-label="Project mode"
-                className="project-mode-switcher"
-              >
-                <button
-                  type="button"
-                  disabled={modeUpdating}
-                  aria-pressed={selectedProject.mode === "document"}
-                  onClick={async () => {
-                    if (selectedProject.mode === "document") return;
-                    setModeUpdating(true);
-                    setError("");
-                    try {
-                      const updated = await updateProject(
-                        selectedProject.id,
-                        { mode: "document" }
-                      );
-                      onSelectProject(updated);
-                      await refreshProjects(updated.id);
-                    } catch (caught) {
-                      setError(
-                        caught instanceof Error
-                          ? caught.message
-                          : "Could not switch to Document Lens."
-                      );
-                    } finally {
-                      setModeUpdating(false);
-                    }
-                  }}
-                  className={
-                    selectedProject.mode === "document" ? "active" : ""
-                  }
-                >
-                  Document Lens
-                </button>
-
-                <button
-                  type="button"
-                  disabled={modeUpdating}
-                  aria-pressed={selectedProject.mode === "research"}
-                  onClick={async () => {
-                    if (selectedProject.mode === "research") return;
-                    setModeUpdating(true);
-                    setError("");
-                    try {
-                      const updated = await updateProject(
-                        selectedProject.id,
-                        { mode: "research" }
-                      );
-                      onSelectProject(updated);
-                      await refreshProjects(updated.id);
-                    } catch (caught) {
-                      setError(
-                        caught instanceof Error
-                          ? caught.message
-                          : "Could not switch to Research Lens."
-                      );
-                    } finally {
-                      setModeUpdating(false);
-                    }
-                  }}
-                  className={
-                    selectedProject.mode === "research" ? "active" : ""
-                  }
-                >
-                  Research Lens
-                </button>
-              </div>
+/div>
 
               {selectedProject.mode === "research" && selectedProject.document_count < 2 && (
                 <p className="project-hint">
@@ -587,11 +517,12 @@ export default function ProjectWorkspace({
                       PROJECT LIBRARY
                     </span>
 
-                    <h3>Explore your papers</h3>
+                    <h3>{selectedProject.mode === "research" ? "Research sources" : "Documents"}</h3>
 
                     <p>
-                      View indexed documents or compare
-                      extracted evidence across them.
+                      {selectedProject.mode === "research"
+                        ? "View indexed papers or inspect the evidence matrix."
+                        : "View the documents available for grounded conversation."}
                     </p>
                   </div>
                 </div>
@@ -612,7 +543,8 @@ export default function ProjectWorkspace({
                     Indexed Papers
                   </button>
 
-                  <button
+                  {selectedProject.mode === "research" && (
+                    <button
                     type="button"
                     role="tab"
                     aria-selected={libraryTab === "matrix"}
@@ -622,6 +554,7 @@ export default function ProjectWorkspace({
                     <FileSpreadsheet size={17} />
                     Evidence Matrix
                   </button>
+                  )}
                 </div>
 
                 {libraryTab === "papers" ? (
