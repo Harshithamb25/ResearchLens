@@ -2221,7 +2221,7 @@ export default function App() {
     onClick={newResearch}
   >
     <ArrowLeft size={16} />
-    New research
+    New conversation
   </button>
 </div>
 
@@ -2330,7 +2330,9 @@ export default function App() {
                                   <span className="conversation-role">
                                     {message.role === "user"
                                       ? "You"
-                                      : "ResearchLens"}
+                                      : selectedProject?.mode === "document"
+                                        ? "Document Lens"
+                                        : "Research Lens"}
                                   </span>
                                   <div className="conversation-content">
                                     {message.role === "assistant" ? (
