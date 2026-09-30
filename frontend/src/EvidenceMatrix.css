@@ -181,19 +181,15 @@
   text-align: left;
 }
 
-.matrix-cell-button:hover .matrix-cell-value {
-  color: #7868da;
-  text-decoration: underline;
-}
+.matrix-cell-button:hover .matrix-finding { color:#6455c4; }
 
-.matrix-cell-value {
-  display: -webkit-box;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  line-clamp: 5;
-  -webkit-line-clamp: 5;
-}
+.matrix-findings { display:flex; flex-direction:column; gap:8px; }
+
+.matrix-finding { display:grid; grid-template-columns:18px minmax(0,1fr); gap:7px; align-items:start; color:var(--text-primary,#29273a); font-size:12px; line-height:1.5; }
+
+.matrix-finding-marker { display:inline-flex; width:17px; height:17px; align-items:center; justify-content:center; margin-top:1px; border:1px solid var(--border,#e5e1ee); border-radius:50%; color:var(--text-secondary,#77758a); font-size:9px; font-weight:750; }
+
+.matrix-source-inspect { display:inline-flex; align-items:center; gap:5px; color:#7868da; font-size:11px; font-weight:600; }
 
 .matrix-cell-source {
   display: inline-flex;

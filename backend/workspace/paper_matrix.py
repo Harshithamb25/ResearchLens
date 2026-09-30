@@ -75,17 +75,14 @@ def _add(
     page: int,
 ) -> None:
     value = _normalize(value)
-
     if not value:
         return
 
     key = value.casefold()
-
     if key in seen[field] or len(fields[field]) >= MAX_ENTRIES:
         return
 
     seen[field].add(key)
-
     fields[field].append({
         "value": value,
         "evidence_text": _normalize(evidence_text),
@@ -102,27 +99,16 @@ def _match_patterns(
     patterns: list[tuple[str, str]],
 ) -> list[tuple[str, re.Match[str]]]:
     matches = []
-
     for label, pattern in patterns:
-        for match in re.finditer(
-            pattern,
-            text,
-            flags=re.IGNORECASE,
-        ):
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             matches.append((label, match))
 
-    matches.sort(
-        key=lambda item: (
-            item[1].start(),
-            item[0],
-        )
-    )
-
+    matches.sort(key=lambda item: (item[1].start(), item[0]))
     return matches
 
 
-# Generic signals intentionally cover research/document domains
-# without assuming a particular topic.
+# Generic signals intentionally cover research/document domains without
+# assuming a particular topic.
 METHOD_PATTERNS = [
     (
         "Methodology",
@@ -147,12 +133,8 @@ METHOD_PATTERNS = [
     ),
 ]
 
-
 DATASET_PATTERNS = [
-    (
-        "Dataset",
-        r"\b(?:dataset|data set)\b[^.!?\n]{0,220}",
-    ),
+    ("Dataset", r"\b(?:dataset|data set)\b[^.!?\n]{0,220}"),
     (
         "Collected data",
         r"\b(?:data|measurements?)\s+(?:were|was)\s+"
@@ -161,8 +143,7 @@ DATASET_PATTERNS = [
     (
         "Field-trial data",
         r"\b(?:field trial|field trials|pilot study|"
-        r"real-world deployment|real-world use case)\b"
-        r"[^.!?\n]{0,220}",
+        r"real-world deployment|real-world use case)\b[^.!?\n]{0,220}",
     ),
     (
         "Study population / sample",
@@ -171,19 +152,16 @@ DATASET_PATTERNS = [
     ),
 ]
 
-
 METRIC_PATTERNS = [
     (
         "Accuracy",
         r"\b(?:accuracy|accurate|precision|recall|F1(?:[- ]score)?|"
-        r"sensitivity|specificity|AUC|RMSE|MAE|mAP)\b"
-        r"[^.!?\n]{0,120}",
+        r"sensitivity|specificity|AUC|RMSE|MAE|mAP)\b[^.!?\n]{0,120}",
     ),
     (
         "Detection / range",
         r"\b(?:detection|detect(?:ed|ion)?|range)\b"
-        r"[^.!?\n]{0,120}"
-        r"\b\d+(?:\.\d+)?\s*(?:m|km|cm|ms|s|%)\b",
+        r"[^.!?\n]{0,120}\b\d+(?:\.\d+)?\s*(?:m|km|cm|ms|s|%)\b",
     ),
     (
         "Delay / timing",
@@ -193,11 +171,9 @@ METRIC_PATTERNS = [
     ),
     (
         "Cost",
-        r"\b(?:cost|price|budget|expenditure)\b"
-        r"[^.!?\n]{0,160}",
+        r"\b(?:cost|price|budget|expenditure)\b[^.!?\n]{0,160}",
     ),
 ]
-
 
 RESULT_PATTERNS = [
     (
@@ -212,8 +188,7 @@ RESULT_PATTERNS = [
     (
         "Observed result",
         r"\b(?:results?|performance|experiment(?:al)?|"
-        r"observed|measured|show(?:s|ed)?)\b"
-        r"[^.!?\n]{0,220}",
+        r"observed|measured|show(?:s|ed)?)\b[^.!?\n]{0,220}",
     ),
     (
         "Tabulated result",
@@ -221,18 +196,15 @@ RESULT_PATTERNS = [
     ),
 ]
 
-
 ADVANTAGE_PATTERNS = [
     (
         "Explicit advantage",
         r"\b(?:advantage|benefit|benefits|strength|"
         r"cost-effective|cost effective|low-cost|low cost|"
         r"user-friendly|easy(?: to)? implement|reliable|"
-        r"scalable|efficient|redundancy|robust)\b"
-        r"[^.!?\n]{0,180}",
+        r"scalable|efficient|redundancy|robust)\b[^.!?\n]{0,180}",
     ),
 ]
-
 
 LIMITATION_PATTERNS = [
     (
@@ -245,7 +217,6 @@ LIMITATION_PATTERNS = [
         r"[^.!?\n]{0,220}",
     ),
 ]
-
 
 APPLICATION_PATTERNS = [
     (
@@ -268,11 +239,7 @@ def _scan_with_patterns(
     add_match: Callable[[str, str, int, int], None],
 ) -> None:
     for label, match in _match_patterns(text, patterns):
-        excerpt = _sentence_context(
-            text,
-            match.start(),
-            match.end(),
-        )
+        excerpt = _sentence_context(text, match.start(), match.end())
 
         if label in {
             "Methodology",
@@ -287,12 +254,7 @@ def _scan_with_patterns(
         else:
             value = excerpt
 
-        add_match(
-            field,
-            value,
-            match.start(),
-            match.end(),
-        )
+        add_match(field, value, match.start(), match.end())
 
 
 def _scan_paper(
@@ -300,28 +262,14 @@ def _scan_paper(
     document_id: str,
     storage_path: str,
 ) -> dict[str, list[dict[str, Any]]]:
-    fields = {
-        field: []
-        for field in FIELDS
-    }
+    fields = {field: [] for field in FIELDS}
+    seen = {field: set() for field in FIELDS}
 
-    seen = {
-        field: set()
-        for field in FIELDS
-    }
-
-    pages = extract_text_from_pdf(
-        Path(storage_path)
-    )
+    pages = extract_text_from_pdf(Path(storage_path))
 
     for page_data in pages:
-        page = int(
-            page_data["page"]
-        )
-
-        text = _normalize(
-            page_data.get("text", "")
-        )[:MAX_PAGE_CHARS]
+        page = int(page_data["page"])
+        text = _normalize(page_data.get("text", ""))[:MAX_PAGE_CHARS]
 
         if not text:
             continue
@@ -337,63 +285,39 @@ def _scan_paper(
                 seen=seen,
                 field=field,
                 value=value,
-                evidence_text=_sentence_context(
-                    text,
-                    start,
-                    end,
-                ),
+                evidence_text=_sentence_context(text, start, end),
                 filename=filename,
                 document_id=document_id,
                 page=page,
             )
 
         _scan_with_patterns(
-            text=text,
-            patterns=METHOD_PATTERNS,
-            field="methodology",
-            add_match=add_match,
+            text=text, patterns=METHOD_PATTERNS,
+            field="methodology", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=DATASET_PATTERNS,
-            field="datasets",
-            add_match=add_match,
+            text=text, patterns=DATASET_PATTERNS,
+            field="datasets", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=METRIC_PATTERNS,
-            field="evaluation_metrics",
-            add_match=add_match,
+            text=text, patterns=METRIC_PATTERNS,
+            field="evaluation_metrics", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=RESULT_PATTERNS,
-            field="accuracy_results",
-            add_match=add_match,
+            text=text, patterns=RESULT_PATTERNS,
+            field="accuracy_results", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=ADVANTAGE_PATTERNS,
-            field="advantages",
-            add_match=add_match,
+            text=text, patterns=ADVANTAGE_PATTERNS,
+            field="advantages", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=LIMITATION_PATTERNS,
-            field="limitations",
-            add_match=add_match,
+            text=text, patterns=LIMITATION_PATTERNS,
+            field="limitations", add_match=add_match,
         )
-
         _scan_with_patterns(
-            text=text,
-            patterns=APPLICATION_PATTERNS,
-            field="applications",
-            add_match=add_match,
+            text=text, patterns=APPLICATION_PATTERNS,
+            field="applications", add_match=add_match,
         )
 
     return fields
@@ -405,10 +329,7 @@ def build_paper_matrix(
 ) -> dict[str, Any]:
     rows = []
 
-    for index, paper in enumerate(
-        papers,
-        start=1,
-    ):
+    for index, paper in enumerate(papers, start=1):
         extracted = _scan_paper(
             filename=paper["filename"],
             document_id=paper["id"],
@@ -424,16 +345,10 @@ def build_paper_matrix(
 
         for field in FIELDS:
             entries = extracted[field]
-
             row[field] = (
-                "; ".join(
-                    item["value"]
-                    for item in entries
-                )
-                if entries
-                else NOT_IDENTIFIED
+                "; ".join(item["value"] for item in entries)
+                if entries else NOT_IDENTIFIED
             )
-
             row["fields"][field] = {
                 "reported": bool(entries),
                 "entries": entries,
@@ -446,49 +361,28 @@ def build_paper_matrix(
         "project_id": project_id,
         "extraction_mode": "page_aware_targeted_scan",
         "columns": [
-            {
-                "key": key,
-                "label": label,
-            }
+            {"key": key, "label": label}
             for key, label in MATRIX_COLUMNS
         ],
         "rows": rows,
         "paper_count": len(rows),
         "note": (
-            "Values are candidate findings extracted directly "
-            "from the original project PDFs. A populated cell "
-            "means source text matched a field-specific signal; "
-            "it is not a claim that the field was scientifically "
-            "validated. Empty fields are shown as 'Not identified "
-            "in extracted evidence'. Inspect the linked passage "
-            "before citing a finding."
+            "Values are candidate findings extracted directly from "
+            "the original project PDFs. A populated cell means source "
+            "text matched a field-specific signal; it is not a claim "
+            "that the field was scientifically validated. Empty fields "
+            "are shown as 'Not identified in extracted evidence'. "
+            "Inspect the linked passage before citing a finding."
         ),
     }
 
 
-def paper_matrix_to_csv(
-    matrix: dict[str, Any],
-) -> str:
-    output = io.StringIO(
-        newline=""
-    )
-
-    writer = csv.writer(
-        output
-    )
-
-    writer.writerow(
-        label
-        for _, label in MATRIX_COLUMNS
-    )
+def paper_matrix_to_csv(matrix: dict[str, Any]) -> str:
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(label for _, label in MATRIX_COLUMNS)
 
     for row in matrix["rows"]:
-        writer.writerow(
-            row.get(
-                key,
-                ""
-            )
-            for key, _ in MATRIX_COLUMNS
-        )
+        writer.writerow(row.get(key, "") for key, _ in MATRIX_COLUMNS)
 
     return output.getvalue()

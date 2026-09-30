@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -28,44 +27,67 @@ interface Props {
   refreshVersion?: number;
 }
 
-const FIELD_COLUMNS: {
-  key: MatrixFieldKey;
-  label: string;
-}[] = [
-  {
-    key: "methodology",
-    label: "Methodology / Algorithm used",
-  },
-  {
-    key: "datasets",
-    label: "Dataset(s)",
-  },
-  {
-    key: "evaluation_metrics",
-    label: "Eval Metrics",
-  },
-  {
-    key: "accuracy_results",
-    label: "Accuracy / Results",
-  },
-  {
-    key: "advantages",
-    label: "Advantages",
-  },
-  {
-    key: "limitations",
-    label: "Disadvantages / Limitations",
-  },
-  {
-    key: "applications",
-    label: "Applications",
-  },
+const FIELD_COLUMNS: { key: MatrixFieldKey; label: string }[] = [
+  { key: "methodology", label: "Methodology / Algorithm" },
+  { key: "datasets", label: "Dataset(s)" },
+  { key: "evaluation_metrics", label: "Evaluation Metrics" },
+  { key: "accuracy_results", label: "Results / Findings" },
+  { key: "advantages", label: "Advantages" },
+  { key: "limitations", label: "Limitations" },
+  { key: "applications", label: "Applications" },
 ];
 
 interface Selection {
   row: MatrixRow;
   field: MatrixFieldKey;
   label: string;
+}
+
+const MAX_VISIBLE_FINDINGS = 3;
+const MAX_CELL_LENGTH = 150;
+
+function normalizeFinding(value: string): string {
+  return value.replace(/\s+/g, " ").replace(/^[-•·\s]+/, "").trim();
+}
+
+function compactFinding(value: string): string {
+  const normalized = normalizeFinding(value);
+
+  if (normalized.length <= MAX_CELL_LENGTH) {
+    return normalized;
+  }
+
+  const candidate = normalized.slice(0, MAX_CELL_LENGTH);
+  const sentenceEnd = Math.max(
+    candidate.lastIndexOf("."),
+    candidate.lastIndexOf("!"),
+    candidate.lastIndexOf("?")
+  );
+
+  if (sentenceEnd >= 55) {
+    return candidate.slice(0, sentenceEnd + 1);
+  }
+
+  return candidate.trimEnd() + "…";
+}
+
+function visibleEntries(entries: MatrixEntry[]): MatrixEntry[] {
+  const seen = new Set<string>();
+  const result: MatrixEntry[] = [];
+
+  for (const entry of entries) {
+    const value = normalizeFinding(entry.value);
+    const key = value.toLowerCase();
+
+    if (!value || seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(entry);
+
+    if (result.length >= MAX_VISIBLE_FINDINGS) break;
+  }
+
+  return result;
 }
 
 export default function EvidenceMatrix({
@@ -88,9 +110,7 @@ export default function EvidenceMatrix({
 
     getPaperMatrix(projectId, controller.signal)
       .then((data) => {
-        if (!controller.signal.aborted) {
-          setMatrix(data);
-        }
+        if (!controller.signal.aborted) setMatrix(data);
       })
       .catch((caught: unknown) => {
         if (!controller.signal.aborted) {
@@ -102,23 +122,15 @@ export default function EvidenceMatrix({
         }
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
+        if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
   }, [projectId, refreshVersion, version]);
 
-  function openPdf(
-    documentId: string,
-    page?: number
-  ): string {
+  function openPdf(documentId: string, page?: number): string {
     const base = getProjectPaperUrl(projectId, documentId);
-
-    return page && page >= 1
-      ? `${base}#page=${page}`
-      : base;
+    return page && page >= 1 ? base + "#page=" + page : base;
   }
 
   function exportCsv() {
@@ -139,25 +151,43 @@ export default function EvidenceMatrix({
     if (!entries.length) {
       return (
         <span className="matrix-unavailable">
-          Not identified
+          Not identified in evidence
         </span>
       );
     }
+
+    const visible = visibleEntries(entries);
+    const remaining = Math.max(entries.length - visible.length, 0);
 
     return (
       <button
         type="button"
         className="matrix-cell-button"
         onClick={() => setSelection({ row, field, label })}
-        title={`Inspect evidence for ${label}`}
+        title={
+          "Inspect " +
+          entries.length +
+          " source finding" +
+          (entries.length === 1 ? "" : "s")
+        }
       >
-        <span className="matrix-cell-value">
-          {row[field]}
+        <span className="matrix-findings">
+          {visible.map((entry, index) => (
+            <span
+              className="matrix-finding"
+              key={String(entry.source.page) + "-" + String(index)}
+            >
+              <span className="matrix-finding-marker">{index + 1}</span>
+              <span>{compactFinding(entry.value)}</span>
+            </span>
+          ))}
         </span>
+
         <span className="matrix-cell-source">
           <BookOpen size={13} />
           {entries.length} source finding
           {entries.length === 1 ? "" : "s"}
+          {remaining > 0 ? " · +" + remaining + " more" : ""}
         </span>
       </button>
     );
@@ -168,13 +198,24 @@ export default function EvidenceMatrix({
     const hasPage = Number.isInteger(page) && page >= 1;
 
     return (
-      <article className="matrix-source-card" key={index}>
+      <article
+        className="matrix-source-card"
+        key={String(entry.source.page) + "-" + String(index)}
+      >
         <div className="matrix-source-heading">
-          <strong>{entry.value}</strong>
+          <div>
+            <span className="matrix-source-index">
+              Finding {index + 1}
+            </span>
+            <strong>{compactFinding(entry.value)}</strong>
+          </div>
           {hasPage && <span>Page {page}</span>}
         </div>
 
-        <p>{entry.evidence_text}</p>
+        <div className="matrix-source-passage">
+          <span>Original passage</span>
+          <p>{entry.evidence_text}</p>
+        </div>
 
         <a
           href={openPdf(
@@ -187,7 +228,7 @@ export default function EvidenceMatrix({
         >
           <ExternalLink size={15} />
           Open original PDF
-          {hasPage ? ` — Page ${page}` : ""}
+          {hasPage ? " — Page " + page : ""}
         </a>
       </article>
     );
@@ -197,13 +238,11 @@ export default function EvidenceMatrix({
     <section className="matrix-workspace">
       <header className="matrix-heading">
         <div>
-          <span className="section-caption">
-            PAPER-WISE COMPARISON
-          </span>
+          <span className="section-caption">PAPER-WISE COMPARISON</span>
           <h3>Cross-Paper Evidence Matrix</h3>
           <p>
-            Compare extracted findings across the papers
-            in your selected project.
+            A compact view of the strongest extracted findings, with every
+            item traceable to its original PDF page.
           </p>
         </div>
 
@@ -235,8 +274,7 @@ export default function EvidenceMatrix({
           <LoaderCircle size={23} className="spinning" />
           <strong>Extracting evidence from your papers</strong>
           <p>
-            Reading the original PDFs and organizing
-            page-linked findings.
+            Reading the original PDFs and organizing page-linked findings.
           </p>
         </div>
       ) : error ? (
@@ -257,15 +295,19 @@ export default function EvidenceMatrix({
             <FileSpreadsheet size={19} />
             <strong>{matrix.paper_count} papers</strong>
             <span>·</span>
-            <span>9 comparison columns</span>
+            <span>7 evidence dimensions</span>
             <span>·</span>
-            <span>Original PDF references</span>
+            <span>Page-linked findings</span>
           </div>
 
-          <p className="matrix-scroll-hint">
-            Scroll horizontally to explore all nine columns.
-            Select a populated cell to inspect its source.
-          </p>
+          <div className="matrix-reading-guide">
+            <span className="matrix-reading-dot" />
+            <span>
+              Each cell shows up to {MAX_VISIBLE_FINDINGS} concise findings.
+              Select a cell to inspect every extracted finding and its original
+              passage.
+            </span>
+          </div>
 
           <div
             className="matrix-table-scroll"
@@ -277,7 +319,7 @@ export default function EvidenceMatrix({
               <thead>
                 <tr>
                   <th scope="col">S. No.</th>
-                  <th scope="col">Paper Title</th>
+                  <th scope="col">Paper</th>
                   {FIELD_COLUMNS.map((column) => (
                     <th scope="col" key={column.key}>
                       {column.label}
@@ -289,9 +331,7 @@ export default function EvidenceMatrix({
               <tbody>
                 {matrix.rows.map((row) => (
                   <tr key={row.document_id}>
-                    <td className="matrix-number">
-                      {row.serial_number}
-                    </td>
+                    <td className="matrix-number">{row.serial_number}</td>
 
                     <td className="matrix-paper">
                       <strong>{row.paper_title}</strong>
@@ -307,11 +347,7 @@ export default function EvidenceMatrix({
 
                     {FIELD_COLUMNS.map((column) => (
                       <td key={column.key}>
-                        {renderCell(
-                          row,
-                          column.key,
-                          column.label
-                        )}
+                        {renderCell(row, column.key, column.label)}
                       </td>
                     ))}
                   </tr>
@@ -320,9 +356,7 @@ export default function EvidenceMatrix({
             </table>
           </div>
 
-          <p className="matrix-disclaimer">
-            {matrix.note}
-          </p>
+          <p className="matrix-disclaimer">{matrix.note}</p>
         </>
       ) : null}
 
@@ -330,9 +364,7 @@ export default function EvidenceMatrix({
         <div
           className="matrix-dialog-backdrop"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setSelection(null);
-            }
+            if (event.target === event.currentTarget) setSelection(null);
           }}
         >
           <section
@@ -343,12 +375,8 @@ export default function EvidenceMatrix({
           >
             <header className="matrix-dialog-header">
               <div>
-                <span className="section-caption">
-                  SOURCE EVIDENCE
-                </span>
-                <h3 id="matrix-dialog-title">
-                  {selection.label}
-                </h3>
+                <span className="section-caption">SOURCE EVIDENCE</span>
+                <h3 id="matrix-dialog-title">{selection.label}</h3>
                 <p>{selection.row.paper_title}</p>
               </div>
 
@@ -362,14 +390,14 @@ export default function EvidenceMatrix({
             </header>
 
             <div className="matrix-dialog-body">
-              {selection.row.fields[
-                selection.field
-              ].entries.map(renderSource)}
+              {selection.row.fields[selection.field].entries.map(
+                renderSource
+              )}
 
               <p className="matrix-disclaimer">
-                These are automatically extracted candidate
-                findings. Check the original passages before
-                citing them.
+                The short finding labels are presentation summaries of
+                extracted source text. The original passage and PDF page are
+                preserved below for verification.
               </p>
             </div>
           </section>
