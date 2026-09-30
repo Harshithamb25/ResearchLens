@@ -171,6 +171,53 @@ export async function analyzeResearch(
   return data;
 }
 
+
+
+export async function analyzeDocument(
+  projectId: string,
+  question: string,
+  signal?: AbortSignal
+): Promise<QueryResponse> {
+  const response = await fetch(
+    `${API_URL}/projects/${encodeURIComponent(projectId)}/document-query`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        question: question.trim(),
+      }),
+      signal,
+    }
+  );
+
+  if (!response.ok) {
+    let message = `Document request failed (HTTP ${response.status}).`;
+
+    try {
+      const error = await response.json();
+      if (typeof error.detail === "string") {
+        message = error.detail;
+      }
+    } catch {
+      // Retain the HTTP error message.
+    }
+
+    throw new Error(message);
+  }
+
+  const data: QueryResponse = await response.json();
+
+  if (!data.success || !data.data?.result) {
+    throw new Error(
+      "The server returned an invalid document response."
+    );
+  }
+
+  return data;
+}
+
 export async function checkBackendHealth(): Promise<boolean> {
   try {
     const response = await fetch(`${API_URL}/health`);
