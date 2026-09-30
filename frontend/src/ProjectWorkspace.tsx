@@ -425,8 +425,6 @@ export default function ProjectWorkspace({
                 </span>
               </div>
 
-</div>
-
               {selectedProject.mode === "research" && selectedProject.document_count < 2 && (
                 <p className="project-hint">
                   Research Lens requires at least
@@ -557,7 +555,7 @@ export default function ProjectWorkspace({
                   )}
                 </div>
 
-                {libraryTab === "papers" ? (
+                {libraryTab === "papers" || selectedProject.mode === "document" ? (
                   <>
                     <button
                       type="button"
