@@ -127,12 +127,18 @@ def _schema() -> dict[str, Any]:
             "datasets": findings,
             "evaluation_metrics": findings,
             "accuracy_percent": {
-                "type": ["number", "null"],
-                "description": "Explicit percentage accuracy only; otherwise null.",
+                "type": "string",
+                "description": (
+                    "Explicit percentage accuracy only, represented as a numeric "
+                    "string such as '92.5%'. Return an empty string when absent."
+                ),
             },
             "accuracy_page": {
-                "type": ["integer", "null"],
-                "minimum": 1,
+                "type": "integer",
+                "minimum": 0,
+                "description": (
+                    "Page supporting accuracy_percent. Return 0 when accuracy is absent."
+                ),
             },
             "accuracy_results": findings,
             "advantages": findings,
@@ -169,7 +175,7 @@ STRICT OUTPUT RULES:
 8. Dataset(s) means the actual data/study material used by this paper.
 9. Accuracy (%) is ONLY an explicit numeric percentage labelled as accuracy.
    Never convert precision, recall, range, delay, cost, reliability, or another
-   metric into accuracy.
+   metric into accuracy. When absent, return accuracy_percent="" and accuracy_page=0.
 10. Every finding needs the supporting PDF page number.
 
 FIELD DEFINITIONS:
@@ -299,6 +305,11 @@ def _accuracy(
     if raw is None or page is None:
         return []
 
+    raw_text = _normalize(raw)
+    match = re.fullmatch(r"(\\d+(?:\\.\\d+)?)\\s*%", raw_text)
+    if not match:
+        return []
+
     page_text = _normalize(pages[page - 1].get("text", ""))
     accuracy_supported = bool(
         re.search(
@@ -316,11 +327,7 @@ def _accuracy(
     if not accuracy_supported:
         return []
 
-    try:
-        number = float(raw)
-    except (TypeError, ValueError):
-        return []
-
+    number = float(match.group(1))
     if not 0 <= number <= 100:
         return []
 
