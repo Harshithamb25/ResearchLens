@@ -985,14 +985,6 @@ export default function App() {
   ) {
     if (!selectedProject || selectedProject.mode === mode) return;
 
-    if (
-      mode === "research" &&
-      selectedProject.document_count < 2
-    ) {
-      setError("Research Lens requires at least two indexed papers.");
-      return;
-    }
-
     try {
       const updated = await updateProject(selectedProject.id, { mode });
       setProjects((items) =>
