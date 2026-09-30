@@ -98,7 +98,7 @@ def test_process_query_orchestrates_evidence_pipeline(
             }
         ]
 
-    def mock_generate_answer(question, context):
+    def mock_generate_answer(question, context, **kwargs):
         assert question == QUESTION
         assert context
 
@@ -161,3 +161,78 @@ def test_process_query_orchestrates_evidence_pipeline(
 def test_process_query_rejects_empty_question():
     with pytest.raises(ValueError):
         process_query("   ")
+
+def test_process_query_passes_conversation_context_to_generation(monkeypatch):
+    """Conversation context must reach the final grounded answer generator."""
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "backend.pipeline.classify_query",
+        lambda question: "general",
+    )
+
+    monkeypatch.setattr(
+        "backend.pipeline.run_evidence_pipeline",
+        lambda **kwargs: {
+            "question": kwargs["question"],
+            "status": "completed",
+            "cross_paper_evidence": False,
+            "evidence": [
+                {
+                    "paper": "paper.pdf",
+                    "page": 3,
+                    "evidence_text": "The proposed method uses RFID.",
+                }
+            ],
+            "claim_groups": [],
+            "relationships": [],
+            "audits": [],
+            "analysis_failures": [],
+            "themes": [],
+            "theme_comparisons": [],
+        },
+    )
+
+    monkeypatch.setattr(
+        "backend.pipeline.evidence_to_answer_context",
+        lambda items: [
+            {
+                "document": "paper.pdf",
+                "page": 3,
+                "chunk_id": None,
+                "text": "The proposed method uses RFID.",
+            }
+        ],
+    )
+
+    def mock_generate_answer(question, context, **kwargs):
+        captured["conversation_context"] = kwargs.get(
+            "conversation_context"
+        )
+        return "The method uses RFID [paper.pdf, Page 3]."
+
+    monkeypatch.setattr(
+        "backend.pipeline.generate_answer",
+        mock_generate_answer,
+    )
+
+    conversation = [
+        {
+            "role": "user",
+            "content": "What method does the paper use?",
+        },
+        {
+            "role": "assistant",
+            "content": "It uses an RFID-based approach.",
+        },
+    ]
+
+    result = process_query(
+        question="How does it work?",
+        project_id="project-1",
+        conversation_context=conversation,
+    )
+
+    assert result["answer_generated"] is True
+    assert captured["conversation_context"] == conversation
