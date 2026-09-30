@@ -86,6 +86,7 @@ const statusLabels: Record<AnalysisStatus, string> = {
   partial: "Partially completed",
   failed: "Audit failed",
   no_evidence: "No analyzable evidence",
+  not_applicable: "Document grounding completed",
 };
 
 /* ============================================================
