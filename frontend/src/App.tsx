@@ -2004,6 +2004,12 @@ export default function App() {
             <main className="research-main wb-research-main">
               {!submittedQuestion ? (
                 <div className="welcome">
+                  {conversationLoading && selectedProject && (
+                    <div className="wb-conversation-loading" role="status">
+                      <LoaderCircle size={16} className="spinning" />
+                      Restoring this project's conversation…
+                    </div>
+                  )}
                   <div className="eyebrow">
                     <Sparkles size={15} />
                     YOUR RESEARCH, UNDERSTOOD
@@ -2170,16 +2176,29 @@ export default function App() {
                         className="spinning"
                       />
 
+                      <span className="wb-loading-kicker">
+                        {selectedProject?.mode === "document"
+                          ? "DOCUMENT LENS"
+                          : "RESEARCH LENS"}
+                      </span>
+
                       <h2>
-                        Analyzing your research
+                        {selectedProject?.mode === "document"
+                          ? "Reading your documents"
+                          : "Analyzing your research"}
                       </h2>
 
                       <p>
-                        Retrieving passages,
-                        comparing findings and
-                        preparing your evidence
-                        audit.
+                        {selectedProject?.mode === "document"
+                          ? "Retrieving relevant passages and preparing a grounded answer."
+                          : "Retrieving passages, comparing findings and preparing your evidence audit."}
                       </p>
+
+                      <div className="wb-loading-steps" aria-hidden="true">
+                        <span>Retrieve</span>
+                        <span>Ground</span>
+                        <span>{selectedProject?.mode === "document" ? "Answer" : "Audit"}</span>
+                      </div>
                     </div>
                   )}
 
@@ -2193,9 +2212,14 @@ export default function App() {
                       <AlertCircle size={23} />
 
                       <div>
+                        <span className="wb-error-kicker">
+                          {selectedProject?.mode === "document"
+                            ? "DOCUMENT LENS"
+                            : "RESEARCH LENS"}
+                        </span>
+
                         <h2>
-                          Research request
-                          unsuccessful
+                          We couldn't complete that request
                         </h2>
 
                         <p>{error}</p>
