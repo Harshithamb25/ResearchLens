@@ -153,6 +153,43 @@ def _append_conversation_message(
     return message_id
 
 
+def get_conversation_context(
+    project_id: str,
+    max_messages: int = 8,
+) -> list[dict]:
+    """Return recent conversational turns for contextual follow-ups."""
+    initialize_database()
+    require_project(project_id)
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                m.role,
+                m.content,
+                m.created_at
+            FROM conversation_messages AS m
+            JOIN conversations AS c
+                ON c.id = m.conversation_id
+            WHERE c.project_id = ?
+            ORDER BY m.created_at DESC, m.id DESC
+            LIMIT ?
+            """,
+            (project_id, max_messages),
+        ).fetchall()
+
+    return [
+        {
+            "role": row["role"],
+            "content": row["content"],
+            "created_at": row["created_at"],
+        }
+        for row in reversed(rows)
+        if isinstance(row["content"], str)
+        and row["content"].strip()
+    ]
+
+
 def save_research_session(
     project_id: str,
     question: str,
