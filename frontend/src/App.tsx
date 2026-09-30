@@ -999,6 +999,9 @@ export default function App() {
         )
       );
       selectProject(updated);
+      if (mode === "document" && view === "history") {
+        setView("research");
+      }
       setError(null);
     } catch (caught) {
       setError(
@@ -1501,7 +1504,7 @@ export default function App() {
               : "research-question"
           }
         >
-          Research question
+          Workspace question
         </label>
 
         <textarea
@@ -1930,7 +1933,7 @@ export default function App() {
 
               <select
                 className="wb-topbar-select"
-                aria-label="Active research project"
+                aria-label="Active project"
                 value={selectedProject?.id ?? ""}
                 onChange={(event) => {
                   const next =
@@ -2313,7 +2316,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* RESEARCH RESPONSE */}
+                  {/* CONVERSATIONAL RESPONSE */}
 
                   {result && !loading && (
                     <>
