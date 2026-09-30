@@ -2023,6 +2023,48 @@ export default function App() {
 
                   {result && !loading && (
                     <>
+                      {conversationMessages.length > 2 && (
+                        <section
+                          className="conversation-history"
+                          aria-label="Previous conversation"
+                        >
+                          <div className="result-section-title">
+                            <History size={18} />
+                            <h2>Conversation</h2>
+                          </div>
+
+                          <div className="conversation-thread">
+                            {conversationMessages
+                              .slice(0, -2)
+                              .map((message) => (
+                                <article
+                                  key={message.id}
+                                  className={
+                                    message.role === "user"
+                                      ? "conversation-message user"
+                                      : "conversation-message assistant"
+                                  }
+                                >
+                                  <span className="conversation-role">
+                                    {message.role === "user"
+                                      ? "You"
+                                      : "ResearchLens"}
+                                  </span>
+                                  <div className="conversation-content">
+                                    {message.role === "assistant" ? (
+                                      <ResearchMarkdown
+                                        content={message.content}
+                                      />
+                                    ) : (
+                                      <p>{message.content}</p>
+                                    )}
+                                  </div>
+                                </article>
+                              ))}
+                          </div>
+                        </section>
+                      )}
+
                       <section className="wb-response-card">
                         <span className="section-caption">
                           RESEARCH RESPONSE
