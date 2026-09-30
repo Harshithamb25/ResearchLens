@@ -299,6 +299,23 @@ def _accuracy(
     if raw is None or page is None:
         return []
 
+    page_text = _normalize(pages[page - 1].get("text", ""))
+    accuracy_supported = bool(
+        re.search(
+            r"accuracy[^.!?%]{0,100}\b\d+(?:\.\d+)?\s*%",
+            page_text,
+            flags=re.IGNORECASE,
+        )
+        or re.search(
+            r"\b\d+(?:\.\d+)?\s*%[^.!?]{0,100}accuracy",
+            page_text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+    if not accuracy_supported:
+        return []
+
     try:
         number = float(raw)
     except (TypeError, ValueError):
