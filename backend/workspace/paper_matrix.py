@@ -1,8 +1,8 @@
 """Evidence-grounded paper-wise matrix extraction.
 
-The matrix is built directly from the original project PDFs. It uses
-domain-agnostic field signals and preserves the exact source page for
-every extracted candidate.
+The matrix is built from the original project PDFs. Candidate findings are
+cleaned into complete, readable evidence sentences while preserving the
+original source page and passage for verification.
 """
 
 import csv
@@ -34,34 +34,148 @@ FIELDS = [
 ]
 
 MAX_ENTRIES = 6
-MAX_EXCERPT = 360
 MAX_PAGE_CHARS = 14000
+MAX_FINDING_CHARS = 420
 
 
 def _normalize(text: str) -> str:
-    text = text.replace("â¢", "•")
-    text = text.replace("â€“", "–")
-    text = text.replace("â€”", "—")
-    return re.sub(r"\s+", " ", text).strip()
+    replacements = {
+        "â¢": "•",
+        "â€“": "–",
+        "â€”": "—",
+        "â€™": "'",
+        "â€œ": '"',
+        "â€": '"',
+        "ﬁ": "fi",
+        "ﬂ": "fl",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def _looks_like_pdf_noise(text: str) -> bool:
+    value = _normalize(text)
+    lowered = value.casefold()
+
+    noise_signals = [
+        "doi:",
+        "corresponding author",
+        "all rights reserved",
+        "open access",
+        "creativecommons",
+        "frontiersin.org",
+        "received:",
+        "accepted:",
+        "published:",
+        "issn",
+        "e-issn",
+        "pp1826-1833",
+        "vol.",
+        "journal of",
+        "international conference on",
+    ]
+
+    if any(signal in lowered for signal in noise_signals):
+        return True
+
+    # Page numbers and academic header fragments are not useful findings.
+    if re.search(r"\b(?:pp?\.?\s*)?\d{3,4}\s*[–-]\s*\d{3,4}\b", value):
+        return True
+
+    if re.fullmatch(r"\d+(?:\s+\d+)*", value):
+        return True
+
+    return False
+
+
+def _split_sentences(text: str) -> list[str]:
+    text = _normalize(text)
+    if not text:
+        return []
+
+    # Preserve normal decimal numbers while splitting on sentence-ending
+    # punctuation followed by a likely sentence start.
+    parts = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", text)
+    return [_normalize(part) for part in parts if _normalize(part)]
+
+
+def _complete_sentence(text: str) -> str:
+    """Return one readable complete sentence, never a character-truncated one."""
+    text = _normalize(text).strip(" -•·\t")
+    if not text:
+        return ""
+
+    sentences = _split_sentences(text)
+    if sentences:
+        candidate = sentences[0]
+
+        # A sentence ending in an obvious abbreviation should not be treated
+        # as complete merely because the extractor encountered a period.
+        if len(candidate) >= 35:
+            if candidate[-1] not in ".!?":
+                return ""
+            return candidate
+
+    return ""
 
 
 def _sentence_context(text: str, start: int, end: int) -> str:
-    left = max(0, text.rfind(".", 0, start) + 1)
-    right_dot = text.find(".", end)
+    """Find a complete sentence around a matched signal."""
+    left_boundary = max(
+        text.rfind(".", 0, start),
+        text.rfind("!", 0, start),
+        text.rfind("?", 0, start),
+    )
+    left = left_boundary + 1
 
-    if right_dot == -1:
-        right = min(len(text), end + MAX_EXCERPT)
-    else:
-        right = min(len(text), right_dot + 1)
+    right_candidates = [
+        position
+        for position in (
+            text.find(".", end),
+            text.find("!", end),
+            text.find("?", end),
+        )
+        if position != -1
+    ]
 
-    excerpt = _normalize(text[left:right])
+    if not right_candidates:
+        return ""
 
-    if len(excerpt) < 80:
-        left = max(0, start - 120)
-        right = min(len(text), end + 220)
-        excerpt = _normalize(text[left:right])
+    right = min(right_candidates) + 1
+    candidate = _complete_sentence(text[left:right])
 
-    return excerpt[:MAX_EXCERPT]
+    if candidate:
+        return candidate
+
+    return ""
+
+
+def _clean_candidate(value: str) -> str:
+    value = _normalize(value).strip(" -•·\t")
+    if not value or _looks_like_pdf_noise(value):
+        return ""
+
+    # Remove common citation markers that can leak from extracted PDF text.
+    value = re.sub(r"\s*\[[0-9,\-– ]+\]\s*", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+
+    sentence = _complete_sentence(value)
+    if not sentence:
+        return ""
+
+    if len(sentence) > MAX_FINDING_CHARS:
+        # Do not create a broken sentence by slicing. Prefer the first
+        # complete sentence if the input contains multiple sentences.
+        sentences = _split_sentences(sentence)
+        if sentences:
+            sentence = sentences[0]
+
+    if len(sentence) < 35:
+        return ""
+
+    return sentence
 
 
 def _add(
@@ -74,31 +188,40 @@ def _add(
     document_id: str,
     page: int,
 ) -> None:
-    value = _normalize(value)
-    if not value:
+    clean_value = _clean_candidate(value)
+    clean_evidence = _normalize(evidence_text)
+
+    if not clean_value:
         return
 
-    key = value.casefold()
+    # The finding must also be traceable to a real sentence in the source.
+    if not clean_evidence:
+        clean_evidence = clean_value
+
+    key = clean_value.casefold()
     if key in seen[field] or len(fields[field]) >= MAX_ENTRIES:
         return
 
     seen[field].add(key)
-    fields[field].append({
-        "value": value,
-        "evidence_text": _normalize(evidence_text),
-        "source": {
-            "paper": filename,
-            "document_id": document_id,
-            "page": page,
-        },
-    })
+    fields[field].append(
+        {
+            "value": clean_value,
+            "evidence_text": clean_evidence,
+            "source": {
+                "paper": filename,
+                "document_id": document_id,
+                "page": page,
+            },
+        }
+    )
 
 
 def _match_patterns(
     text: str,
     patterns: list[tuple[str, str]],
 ) -> list[tuple[str, re.Match[str]]]:
-    matches = []
+    matches: list[tuple[str, re.Match[str]]] = []
+
     for label, pattern in patterns:
         for match in re.finditer(pattern, text, flags=re.IGNORECASE):
             matches.append((label, match))
@@ -107,48 +230,41 @@ def _match_patterns(
     return matches
 
 
-# Generic signals intentionally cover research/document domains without
-# assuming a particular topic.
 METHOD_PATTERNS = [
     (
         "Methodology",
         r"\b(?:we|our|this paper|the authors?)\s+"
         r"(?:propose|proposed|develop|developed|design|designed|"
         r"implement|implemented|use|used|adopt|adopted)\b"
-        r"[^.!?\n]{0,180}",
+        r"[^.!?\n]{0,260}[.!?]",
     ),
     (
         "System / architecture",
         r"\b(?:system architecture|system design|"
         r"proposed architecture|implementation design|"
-        r"experimental setup)\b[^.!?\n]{0,180}",
-    ),
-    (
-        "Named technology",
-        r"\b(?:RFID|BLE|Bluetooth Low Energy|GPS|GSM|GPRS|"
-        r"Arduino(?: UNO)?|Raspberry Pi(?: Zero)?|"
-        r"SIM808|SIM900[A-Z]?|ESP8266|ThingSpeak|"
-        r"Random Forest|XGBoost|SVM|CNN|LSTM|BERT|"
-        r"YOLO|Transformer|neural network|support vector machine)\b",
+        r"experimental setup)\b[^.!?\n]{0,260}[.!?]",
     ),
 ]
 
 DATASET_PATTERNS = [
-    ("Dataset", r"\b(?:dataset|data set)\b[^.!?\n]{0,220}"),
+    (
+        "Dataset",
+        r"\b(?:dataset|data set)\b[^.!?\n]{0,260}[.!?]",
+    ),
     (
         "Collected data",
         r"\b(?:data|measurements?)\s+(?:were|was)\s+"
-        r"(?:collected|recorded|gathered)\b[^.!?\n]{0,220}",
+        r"(?:collected|recorded|gathered)\b[^.!?\n]{0,260}[.!?]",
     ),
     (
         "Field-trial data",
         r"\b(?:field trial|field trials|pilot study|"
-        r"real-world deployment|real-world use case)\b[^.!?\n]{0,220}",
+        r"real-world deployment|real-world use case)\b[^.!?\n]{0,260}[.!?]",
     ),
     (
         "Study population / sample",
         r"\b(?:sample|participants?|subjects?|observations?|cases?)\b"
-        r"[^.!?\n]{0,180}",
+        r"[^.!?\n]{0,220}[.!?]",
     ),
 ]
 
@@ -156,22 +272,22 @@ METRIC_PATTERNS = [
     (
         "Accuracy",
         r"\b(?:accuracy|accurate|precision|recall|F1(?:[- ]score)?|"
-        r"sensitivity|specificity|AUC|RMSE|MAE|mAP)\b[^.!?\n]{0,120}",
+        r"sensitivity|specificity|AUC|RMSE|MAE|mAP)\b[^.!?\n]{0,180}[.!?]",
     ),
     (
         "Detection / range",
         r"\b(?:detection|detect(?:ed|ion)?|range)\b"
-        r"[^.!?\n]{0,120}\b\d+(?:\.\d+)?\s*(?:m|km|cm|ms|s|%)\b",
+        r"[^.!?\n]{0,180}\b\d+(?:\.\d+)?\s*(?:m|km|cm|ms|s|%)\b[^.!?\n]*[.!?]",
     ),
     (
         "Delay / timing",
         r"\b(?:delay|latency|journey time|travel time|"
         r"on-time|early departures?|delayed departures?)\b"
-        r"[^.!?\n]{0,140}",
+        r"[^.!?\n]{0,180}[.!?]",
     ),
     (
         "Cost",
-        r"\b(?:cost|price|budget|expenditure)\b[^.!?\n]{0,160}",
+        r"\b(?:cost|price|budget|expenditure)\b[^.!?\n]{0,180}[.!?]",
     ),
 ]
 
@@ -181,18 +297,18 @@ RESULT_PATTERNS = [
         r"\b(?:accuracy|precision|recall|F1(?:[- ]score)?|"
         r"on-time|early|delayed|detection|latency|delay|"
         r"journey time|travel time|cost|total cost)\b"
-        r"[^.!?\n]{0,180}"
+        r"[^.!?\n]{0,220}"
         r"\b\d+(?:\.\d+)?\s*(?:%|m|km|cm|ms|s|BDT|USD|RM|"
-        r"minutes?|hours?)\b",
+        r"minutes?|hours?)\b[^.!?\n]*[.!?]",
     ),
     (
         "Observed result",
         r"\b(?:results?|performance|experiment(?:al)?|"
-        r"observed|measured|show(?:s|ed)?)\b[^.!?\n]{0,220}",
+        r"observed|measured|show(?:s|ed)?)\b[^.!?\n]{0,260}[.!?]",
     ),
     (
         "Tabulated result",
-        r"\b(?:table|figure)\s+\d+\b[^.!?\n]{0,180}",
+        r"\b(?:table|figure)\s+\d+\b[^.!?\n]{0,220}[.!?]",
     ),
 ]
 
@@ -202,7 +318,7 @@ ADVANTAGE_PATTERNS = [
         r"\b(?:advantage|benefit|benefits|strength|"
         r"cost-effective|cost effective|low-cost|low cost|"
         r"user-friendly|easy(?: to)? implement|reliable|"
-        r"scalable|efficient|redundancy|robust)\b[^.!?\n]{0,180}",
+        r"scalable|efficient|redundancy|robust)\b[^.!?\n]{0,220}[.!?]",
     ),
 ]
 
@@ -214,7 +330,7 @@ LIMITATION_PATTERNS = [
         r"constraint|constraints|restricted|limited|"
         r"dependency|depends on|requires|maintenance|"
         r"fault|failure|unavailable|future work|future scope)\b"
-        r"[^.!?\n]{0,220}",
+        r"[^.!?\n]{0,260}[.!?]",
     ),
 ]
 
@@ -226,7 +342,7 @@ APPLICATION_PATTERNS = [
         r"fleet management|vehicle tracking|bus tracking|"
         r"ETA|estimated time of arrival|monitoring|"
         r"smart transportation|public transportation)\b"
-        r"[^.!?\n]{0,180}",
+        r"[^.!?\n]{0,220}[.!?]",
     ),
 ]
 
@@ -238,23 +354,17 @@ def _scan_with_patterns(
     field: str,
     add_match: Callable[[str, str, int, int], None],
 ) -> None:
-    for label, match in _match_patterns(text, patterns):
-        excerpt = _sentence_context(text, match.start(), match.end())
+    for _label, match in _match_patterns(text, patterns):
+        context = _sentence_context(text, match.start(), match.end())
+        if not context:
+            continue
 
-        if label in {
-            "Methodology",
-            "System / architecture",
-            "Dataset",
-            "Collected data",
-            "Field-trial data",
-            "Study population / sample",
-            "Application",
-        }:
-            value = _normalize(match.group(0))
-        else:
-            value = excerpt
-
-        add_match(field, value, match.start(), match.end())
+        add_match(
+            field,
+            context,
+            match.start(),
+            match.end(),
+        )
 
 
 def _scan_paper(
@@ -292,32 +402,46 @@ def _scan_paper(
             )
 
         _scan_with_patterns(
-            text=text, patterns=METHOD_PATTERNS,
-            field="methodology", add_match=add_match,
+            text=text,
+            patterns=METHOD_PATTERNS,
+            field="methodology",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=DATASET_PATTERNS,
-            field="datasets", add_match=add_match,
+            text=text,
+            patterns=DATASET_PATTERNS,
+            field="datasets",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=METRIC_PATTERNS,
-            field="evaluation_metrics", add_match=add_match,
+            text=text,
+            patterns=METRIC_PATTERNS,
+            field="evaluation_metrics",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=RESULT_PATTERNS,
-            field="accuracy_results", add_match=add_match,
+            text=text,
+            patterns=RESULT_PATTERNS,
+            field="accuracy_results",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=ADVANTAGE_PATTERNS,
-            field="advantages", add_match=add_match,
+            text=text,
+            patterns=ADVANTAGE_PATTERNS,
+            field="advantages",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=LIMITATION_PATTERNS,
-            field="limitations", add_match=add_match,
+            text=text,
+            patterns=LIMITATION_PATTERNS,
+            field="limitations",
+            add_match=add_match,
         )
         _scan_with_patterns(
-            text=text, patterns=APPLICATION_PATTERNS,
-            field="applications", add_match=add_match,
+            text=text,
+            patterns=APPLICATION_PATTERNS,
+            field="applications",
+            add_match=add_match,
         )
 
     return fields
@@ -347,7 +471,8 @@ def build_paper_matrix(
             entries = extracted[field]
             row[field] = (
                 "; ".join(item["value"] for item in entries)
-                if entries else NOT_IDENTIFIED
+                if entries
+                else NOT_IDENTIFIED
             )
             row["fields"][field] = {
                 "reported": bool(entries),
@@ -367,12 +492,12 @@ def build_paper_matrix(
         "rows": rows,
         "paper_count": len(rows),
         "note": (
-            "Values are candidate findings extracted directly from "
-            "the original project PDFs. A populated cell means source "
-            "text matched a field-specific signal; it is not a claim "
-            "that the field was scientifically validated. Empty fields "
-            "are shown as 'Not identified in extracted evidence'. "
-            "Inspect the linked passage before citing a finding."
+            "Values are candidate findings extracted directly from the "
+            "original project PDFs. Findings are presented as complete "
+            "source sentences; the original passage and page remain "
+            "available for verification. A populated cell does not mean "
+            "the field was scientifically validated. Empty fields are "
+            "shown as 'Not identified in extracted evidence'."
         ),
     }
 
