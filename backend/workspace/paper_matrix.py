@@ -149,7 +149,6 @@ def _schema() -> dict[str, Any]:
             "evaluation_metrics", "accuracy_percent", "accuracy_page",
             "accuracy_results", "advantages", "limitations", "applications",
         ],
-        "additionalProperties": False,
     }
 
 
