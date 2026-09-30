@@ -2180,8 +2180,18 @@ button:disabled {
 .app-shell .brand-copy strong { font-family: Manrope, sans-serif; }
 .app-shell .brand-copy span { color: var(--muted); }
 .app-shell .new-research { display: inline-flex; }
-.app-shell .nav-list { display: none; }
-.app-shell .sidebar-note { display: none; }
+.app-shell .nav-list {
+  display: grid;
+  gap: 4px;
+}
+
+.app-shell .sidebar-note {
+  display: flex;
+}
+
+.app-shell.mode-document .nav-list .nav-item:last-child {
+  /* Research history is not rendered in Document Lens. */
+}
 
 .app-shell.mode-document .wb-result-tabs,
 .app-shell.mode-document .wb-inspector,
