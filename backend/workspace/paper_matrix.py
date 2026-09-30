@@ -108,7 +108,6 @@ def _schema() -> dict[str, Any]:
             "page": {"type": "integer", "minimum": 1},
         },
         "required": ["summary", "page"],
-        "additionalProperties": False,
     }
     findings = {
         "type": "array",
