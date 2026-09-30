@@ -51,6 +51,14 @@ upload_lock = Lock()
 class CreateProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=1000)
+    mode: str = Field(default="research")
+
+
+class UpdateProjectRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    mode: str | None = Field(default=None)
+    is_pinned: bool | None = None
 
 
 class ProjectQueryRequest(BaseModel):
@@ -105,6 +113,9 @@ def create_project(request: CreateProjectRequest):
     project_id = str(uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
     description = request.description.strip()
+    mode = request.mode.strip().lower()
+    if mode not in {"document", "research"}:
+        raise HTTPException(status_code=422, detail="Project mode must be 'document' or 'research'.")
 
     with get_connection() as connection:
         connection.execute(
@@ -115,16 +126,20 @@ def create_project(request: CreateProjectRequest):
                     name,
                     description,
                     status,
+                    mode,
+                    is_pinned,
                     created_at,
                     updated_at
                 )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id,
                 name,
                 description,
                 "active",
+                mode,
+                0,
                 timestamp,
                 timestamp,
             ),
@@ -137,6 +152,8 @@ def create_project(request: CreateProjectRequest):
         "name": name,
         "description": description,
         "status": "active",
+        "mode": mode,
+        "is_pinned": False,
         "created_at": timestamp,
         "updated_at": timestamp,
         "document_count": 0,
@@ -159,6 +176,8 @@ def list_projects():
                 p.name,
                 p.description,
                 p.status,
+                p.mode,
+                p.is_pinned,
                 p.created_at,
                 p.updated_at,
                 COUNT(d.id) AS document_count
@@ -166,11 +185,11 @@ def list_projects():
             LEFT JOIN documents AS d
                 ON d.project_id = p.id
             GROUP BY p.id
-            ORDER BY p.created_at DESC
+            ORDER BY p.is_pinned DESC, p.updated_at DESC, p.id DESC
             """
         ).fetchall()
 
-    projects = [dict(row) for row in rows]
+    projects = [{**dict(row), "is_pinned": bool(row["is_pinned"])} for row in rows]
 
     return {
         "projects": projects,
@@ -214,6 +233,71 @@ def get_project(project_id: str):
 
     return dict(row)
 
+
+# --------------------------------------------------
+# Project workspace metadata
+# --------------------------------------------------
+
+@router.patch("/{project_id}")
+def update_project(project_id: str, request: UpdateProjectRequest):
+    initialize_database()
+    _require_project(project_id)
+
+    updates = []
+    values = []
+
+    if request.name is not None:
+        name = request.name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Project name cannot be empty.")
+        updates.append("name = ?")
+        values.append(name)
+
+    if request.description is not None:
+        updates.append("description = ?")
+        values.append(request.description.strip())
+
+    if request.mode is not None:
+        mode = request.mode.strip().lower()
+        if mode not in {"document", "research"}:
+            raise HTTPException(status_code=422, detail="Project mode must be 'document' or 'research'.")
+        updates.append("mode = ?")
+        values.append(mode)
+
+    if request.is_pinned is not None:
+        updates.append("is_pinned = ?")
+        values.append(int(request.is_pinned))
+
+    if not updates:
+        raise HTTPException(status_code=422, detail="No project changes were supplied.")
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    updates.append("updated_at = ?")
+    values.extend([timestamp, project_id])
+
+    with get_connection() as connection:
+        connection.execute(
+            f"UPDATE projects SET {", ".join(updates)} WHERE id = ?",
+            values,
+        )
+        connection.commit()
+
+    return get_project(project_id)
+
+
+@router.delete("/{project_id}")
+def delete_project(project_id: str):
+    initialize_database()
+    _require_project(project_id)
+
+    with get_connection() as connection:
+        connection.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        connection.commit()
+
+    import shutil
+    shutil.rmtree(PROJECT_FILES_DIR / project_id, ignore_errors=True)
+
+    return {"success": True, "project_id": project_id}
 
 # --------------------------------------------------
 # List indexed papers in a project
