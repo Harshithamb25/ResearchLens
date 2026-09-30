@@ -430,14 +430,7 @@ export default function ProjectWorkspace({
               <div
                 role="group"
                 aria-label="Project mode"
-                style={{
-                  display: "inline-flex",
-                  gap: 4,
-                  padding: 4,
-                  margin: "12px 0 18px",
-                  border: "1px solid var(--border, #e5e1ee)",
-                  borderRadius: 10,
-                }}
+                className="project-mode-switcher"
               >
                 <button
                   type="button"
@@ -464,18 +457,9 @@ export default function ProjectWorkspace({
                       setModeUpdating(false);
                     }
                   }}
-                  style={{
-                    padding: "9px 13px",
-                    border: 0,
-                    borderRadius: 7,
-                    background:
-                      selectedProject.mode === "document"
-                        ? "var(--surface-strong, #f1eef8)"
-                        : "transparent",
-                    cursor: modeUpdating ? "wait" : "pointer",
-                    fontWeight:
-                      selectedProject.mode === "document" ? 700 : 500,
-                  }}
+                  className={
+                    selectedProject.mode === "document" ? "active" : ""
+                  }
                 >
                   Document Lens
                 </button>
@@ -505,18 +489,9 @@ export default function ProjectWorkspace({
                       setModeUpdating(false);
                     }
                   }}
-                  style={{
-                    padding: "9px 13px",
-                    border: 0,
-                    borderRadius: 7,
-                    background:
-                      selectedProject.mode === "research"
-                        ? "var(--surface-strong, #f1eef8)"
-                        : "transparent",
-                    cursor: modeUpdating ? "wait" : "pointer",
-                    fontWeight:
-                      selectedProject.mode === "research" ? 700 : 500,
-                  }}
+                  className={
+                    selectedProject.mode === "research" ? "active" : ""
+                  }
                 >
                   Research Lens
                 </button>
@@ -548,7 +523,7 @@ export default function ProjectWorkspace({
                 <UploadCloud size={31} />
 
                 <strong>
-                  Drag and drop research PDFs here
+                  Drag and drop {selectedProject.mode === "document" ? "documents" : "research papers"} here
                 </strong>
 
                 <span>
@@ -624,35 +599,14 @@ export default function ProjectWorkspace({
                 <div
                   role="tablist"
                   aria-label="Project library views"
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    margin: "20px 0",
-                    borderBottom:
-                      "1px solid var(--border, #e5e1ee)",
-                  }}
+                  className="project-library-tabs"
                 >
                   <button
                     type="button"
                     role="tab"
                     aria-selected={libraryTab === "papers"}
                     onClick={() => setLibraryTab("papers")}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "12px 16px",
-                      border: 0,
-                      borderBottom:
-                        libraryTab === "papers"
-                          ? "2px solid #7868da"
-                          : "2px solid transparent",
-                      background: "transparent",
-                      color: "inherit",
-                      cursor: "pointer",
-                      fontWeight:
-                        libraryTab === "papers" ? 700 : 500,
-                    }}
+                    className={libraryTab === "papers" ? "active" : ""}
                   >
                     <FileText size={17} />
                     Indexed Papers
@@ -663,22 +617,7 @@ export default function ProjectWorkspace({
                     role="tab"
                     aria-selected={libraryTab === "matrix"}
                     onClick={() => setLibraryTab("matrix")}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "12px 16px",
-                      border: 0,
-                      borderBottom:
-                        libraryTab === "matrix"
-                          ? "2px solid #7868da"
-                          : "2px solid transparent",
-                      background: "transparent",
-                      color: "inherit",
-                      cursor: "pointer",
-                      fontWeight:
-                        libraryTab === "matrix" ? 700 : 500,
-                    }}
+                    className={libraryTab === "matrix" ? "active" : ""}
                   >
                     <FileSpreadsheet size={17} />
                     Evidence Matrix
