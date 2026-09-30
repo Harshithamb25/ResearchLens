@@ -44,31 +44,12 @@ interface Selection {
 }
 
 const MAX_VISIBLE_FINDINGS = 3;
-const MAX_CELL_LENGTH = 150;
 
 function normalizeFinding(value: string): string {
-  return value.replace(/\s+/g, " ").replace(/^[-•·\s]+/, "").trim();
-}
-
-function compactFinding(value: string): string {
-  const normalized = normalizeFinding(value);
-
-  if (normalized.length <= MAX_CELL_LENGTH) {
-    return normalized;
-  }
-
-  const candidate = normalized.slice(0, MAX_CELL_LENGTH);
-  const sentenceEnd = Math.max(
-    candidate.lastIndexOf("."),
-    candidate.lastIndexOf("!"),
-    candidate.lastIndexOf("?")
-  );
-
-  if (sentenceEnd >= 55) {
-    return candidate.slice(0, sentenceEnd + 1);
-  }
-
-  return candidate.trimEnd() + "…";
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/^[-•·\s]+/, "")
+    .trim();
 }
 
 function visibleEntries(entries: MatrixEntry[]): MatrixEntry[] {
@@ -175,10 +156,16 @@ export default function EvidenceMatrix({
           {visible.map((entry, index) => (
             <span
               className="matrix-finding"
-              key={String(entry.source.page) + "-" + String(index)}
+              key={
+                String(entry.source.document_id) +
+                "-" +
+                String(entry.source.page) +
+                "-" +
+                String(index)
+              }
             >
               <span className="matrix-finding-marker">{index + 1}</span>
-              <span>{compactFinding(entry.value)}</span>
+              <span>{normalizeFinding(entry.value)}</span>
             </span>
           ))}
         </span>
@@ -200,14 +187,20 @@ export default function EvidenceMatrix({
     return (
       <article
         className="matrix-source-card"
-        key={String(entry.source.page) + "-" + String(index)}
+        key={
+          String(entry.source.document_id) +
+          "-" +
+          String(entry.source.page) +
+          "-" +
+          String(index)
+        }
       >
         <div className="matrix-source-heading">
           <div>
             <span className="matrix-source-index">
               Finding {index + 1}
             </span>
-            <strong>{compactFinding(entry.value)}</strong>
+            <strong>{normalizeFinding(entry.value)}</strong>
           </div>
           {hasPage && <span>Page {page}</span>}
         </div>
@@ -241,8 +234,8 @@ export default function EvidenceMatrix({
           <span className="section-caption">PAPER-WISE COMPARISON</span>
           <h3>Cross-Paper Evidence Matrix</h3>
           <p>
-            A compact view of the strongest extracted findings, with every
-            item traceable to its original PDF page.
+            A compact view of complete evidence findings, with every item
+            traceable to its original PDF page.
           </p>
         </div>
 
@@ -303,7 +296,7 @@ export default function EvidenceMatrix({
           <div className="matrix-reading-guide">
             <span className="matrix-reading-dot" />
             <span>
-              Each cell shows up to {MAX_VISIBLE_FINDINGS} concise findings.
+              Each cell shows up to {MAX_VISIBLE_FINDINGS} complete findings.
               Select a cell to inspect every extracted finding and its original
               passage.
             </span>
@@ -395,8 +388,8 @@ export default function EvidenceMatrix({
               )}
 
               <p className="matrix-disclaimer">
-                The short finding labels are presentation summaries of
-                extracted source text. The original passage and PDF page are
+                Findings are complete source sentences selected from the
+                extracted PDF text. The original passage and PDF page are
                 preserved below for verification.
               </p>
             </div>
