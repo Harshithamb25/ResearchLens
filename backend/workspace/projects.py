@@ -709,6 +709,7 @@ def query_project_document(
             "audit_completed": False,
             "failed_group_count": 0,
             "result": {
+                "status": "not_applicable",
                 "evidence": evidence,
                 "cross_paper_evidence": False,
                 "themes": [],
