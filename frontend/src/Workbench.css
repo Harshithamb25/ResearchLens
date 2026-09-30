@@ -763,6 +763,88 @@ button:disabled {
   margin: 0;
 }
 
+.wb-bottom-composer {
+  position: sticky;
+  bottom: 14px;
+  z-index: 12;
+  max-width: 1020px;
+  margin: 18px auto 0;
+  padding: 0 8px;
+  pointer-events: none;
+}
+
+.wb-bottom-composer .question-form {
+  pointer-events: auto;
+  border-color: var(--accent);
+  box-shadow: 0 10px 32px rgba(40, 44, 70, 0.13);
+  transition: box-shadow 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.wb-bottom-composer .question-form:focus-within {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 38px rgba(40, 44, 70, 0.17);
+}
+
+.conversation-history {
+  max-width: 1020px;
+  margin: 0 auto 16px;
+}
+
+.conversation-thread {
+  display: grid;
+  gap: 10px;
+}
+
+.conversation-message {
+  max-width: 82%;
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  line-height: 1.65;
+  animation: wb-message-in 180ms ease both;
+}
+
+.conversation-message.user {
+  justify-self: end;
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.conversation-message.assistant {
+  justify-self: start;
+  background: var(--surface);
+}
+
+.conversation-role {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+}
+
+.conversation-content {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.conversation-content p {
+  margin: 0;
+}
+
+@keyframes wb-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .wb-compact-question .form-bottom > span {
   display: none;
 }
