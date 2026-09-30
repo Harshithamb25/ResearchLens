@@ -711,6 +711,17 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (selectedProject?.mode === "document") {
+      setResultTab((current) =>
+        current === "themes" ? "synthesis" : current
+      );
+      setInspectorTab((current) =>
+        current === "comparisons" ? "overview" : current
+      );
+    }
+  }, [selectedProject?.mode]);
+
+  useEffect(() => {
     const projectId = selectedProject?.id;
 
     if (!projectId) {
@@ -2472,6 +2483,8 @@ export default function App() {
                               </span>
                             </div>
 
+                            {selectedProject?.mode === "research" && (
+                              <>
                             <div>
                               <span className="summary-number">
                                 {analysis
@@ -2495,6 +2508,8 @@ export default function App() {
                                 Comparisons
                               </span>
                             </div>
+                              </>
+                            )}
                           </section>
                         </section>
                       )}
