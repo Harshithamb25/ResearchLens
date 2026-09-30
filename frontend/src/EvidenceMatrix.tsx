@@ -38,6 +38,19 @@ const FIELD_COLUMNS: { key: MatrixFieldKey; label: string }[] = [
   { key: "applications", label: "Applications" },
 ];
 
+function hasReportedAccuracy(rows: MatrixRow[]): boolean {
+  return rows.some((row) =>
+    (row.fields?.accuracy_percent?.entries ?? []).some((entry) => {
+      const value = normalizeFinding(entry.value);
+      return (
+        value !== "" &&
+        !/^not reported$/i.test(value) &&
+        /^(?:\d+(?:\.\d+)?)\s*%$/.test(value)
+      );
+    })
+  );
+}
+
 interface Selection {
   row: MatrixRow;
   field: MatrixFieldKey;
@@ -308,70 +321,88 @@ export default function EvidenceMatrix({
         </div>
       ) : matrix ? (
         <>
-          <div className="matrix-summary">
-            <FileSpreadsheet size={19} />
-            <strong>{matrix.paper_count} papers</strong>
-            <span>·</span>
-            <span>8 comparison dimensions</span>
-            <span>·</span>
-            <span>AI-paraphrased + page-linked</span>
-          </div>
+          {(() => {
+            const showAccuracy = hasReportedAccuracy(matrix.rows);
+            const visibleColumns = FIELD_COLUMNS.filter(
+              (column) =>
+                column.key !== "accuracy_percent" || showAccuracy
+            );
 
-          <div className="matrix-reading-guide">
-            <span className="matrix-reading-dot" />
-            <span>
-              The table shows short analytical summaries, not copied PDF
-              sentences. Select any cell to inspect the supporting passage.
-              Accuracy (%) contains only explicitly reported percentage accuracy.
-            </span>
-          </div>
+            return (
+              <>
+                <div className="matrix-summary">
+                  <FileSpreadsheet size={19} />
+                  <strong>{matrix.paper_count} papers</strong>
+                  <span>·</span>
+                  <span>
+                    {visibleColumns.length} comparison dimensions
+                  </span>
+                  <span>·</span>
+                  <span>AI-paraphrased + page-linked</span>
+                </div>
 
-          <div
-            className="matrix-table-scroll"
-            role="region"
-            aria-label="Cross-paper evidence matrix"
-            tabIndex={0}
-          >
-            <table className="matrix-table">
-              <thead>
-                <tr>
-                  <th scope="col">S. No.</th>
-                  <th scope="col">Paper</th>
-                  {FIELD_COLUMNS.map((column) => (
-                    <th scope="col" key={column.key}>
-                      {column.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+                <div className="matrix-reading-guide">
+                  <span className="matrix-reading-dot" />
+                  <span>
+                    The table shows short analytical summaries, not copied PDF
+                    sentences. Select any cell to inspect the supporting passage.
+                    {showAccuracy
+                      ? " Accuracy (%) contains only explicitly reported percentage accuracy."
+                      : ""}
+                  </span>
+                </div>
 
-              <tbody>
-                {matrix.rows.map((row) => (
-                  <tr key={row.document_id}>
-                    <td className="matrix-number">{row.serial_number}</td>
+                <div
+                  className="matrix-table-scroll"
+                  role="region"
+                  aria-label="Cross-paper evidence matrix"
+                  tabIndex={0}
+                >
+                  <table className="matrix-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">S. No.</th>
+                        <th scope="col">Paper</th>
+                        {visibleColumns.map((column) => (
+                          <th scope="col" key={column.key}>
+                            {column.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
 
-                    <td className="matrix-paper">
-                      <strong>{row.paper_title}</strong>
-                      <a
-                        href={openPdf(row.document_id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <ExternalLink size={13} />
-                        View PDF
-                      </a>
-                    </td>
+                    <tbody>
+                      {matrix.rows.map((row) => (
+                        <tr key={row.document_id}>
+                          <td className="matrix-number">{row.serial_number}</td>
 
-                    {FIELD_COLUMNS.map((column) => (
-                      <td key={column.key}>
-                        {renderCell(row, column.key, column.label)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                          <td className="matrix-paper">
+                            <strong>{row.paper_title}</strong>
+                            <a
+                              href={openPdf(row.document_id)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink size={13} />
+                              View PDF
+                            </a>
+                          </td>
+
+                          {visibleColumns.map((column) => (
+                            <td key={column.key}>
+                              {renderCell(row, column.key, column.label)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
+
+
 
           {matrix.errors?.length ? (
             <p className="matrix-disclaimer">
