@@ -1917,7 +1917,7 @@ export default function App() {
 
               <span className="wb-project-subtitle">
                 {selectedProject
-                  ? `${selectedProject.document_count} papers · Active`
+                  ? `${selectedProject.document_count} ${selectedProject.mode === "document" ? "documents" : "papers"} · Active`
                   : "Create a project to begin"}
               </span>
             </div>
